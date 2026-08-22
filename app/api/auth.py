@@ -1,5 +1,3 @@
-import secrets
-from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -16,10 +14,10 @@ from app.models.session import Session as SessionModel
 from app.models.user import User
 from app.schemas.auth import UserOut
 from app.schemas.response import APIResponse
+from app.services.auth_service import SESSION_TTL_DAYS, create_session, get_or_create_user
 
 router = APIRouter()
 
-SESSION_TTL_DAYS = 7
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
@@ -72,25 +70,8 @@ def google_callback(code: str, db: Annotated[DBSession, Depends(get_db)]):
             status_code=401, code="google_auth_failed", message="Google authentication failed"
         ) from e
 
-    user = db.query(User).filter_by(google_id=userinfo["sub"]).first()
-    if user is None:
-        user = User(
-            google_id=userinfo["sub"],
-            email=userinfo["email"],
-            full_name=userinfo.get("name"),
-            avatar_url=userinfo.get("picture"),
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    session = SessionModel(
-        token=secrets.token_urlsafe(32),
-        user_id=user.id,
-        expires_at=datetime.now(UTC) + timedelta(days=SESSION_TTL_DAYS),
-    )
-    db.add(session)
-    db.commit()
+    user = get_or_create_user(db, userinfo)
+    session = create_session(db, user)
 
     redirect = RedirectResponse(url="/", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     redirect.set_cookie(

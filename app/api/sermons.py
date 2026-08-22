@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session as DBSession
 
 from app.api.deps import get_current_user
@@ -8,8 +8,12 @@ from app.database import get_db
 from app.errors import AppException
 from app.models.user import User
 from app.schemas.response import APIResponse
-from app.schemas.sermon import SermonSubmissionOut, SubmitSermonRequest
-from app.services.sermon_service import submit_sermon
+from app.schemas.sermon import (
+    LibraryPageOut,
+    SermonSubmissionOut,
+    SubmitSermonRequest,
+)
+from app.services.sermon_service import get_library, submit_sermon
 
 router = APIRouter()
 
@@ -28,3 +32,15 @@ def create_sermon(
 
     response.status_code = result.status_code
     return APIResponse.ok(SermonSubmissionOut.model_validate(result.sermon, from_attributes=True))
+
+
+@router.get("", response_model=APIResponse[LibraryPageOut])
+def list_sermons(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+    theme: str | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    result = get_library(db, user, page=page, page_size=page_size, theme=theme)
+    return APIResponse.ok(LibraryPageOut.model_validate(result, from_attributes=True))

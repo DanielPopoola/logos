@@ -1,19 +1,44 @@
 from dataclasses import dataclass
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.ingestion.youtube import extract_video_id
 from app.models.processing_job import ProcessingJob
 from app.models.sermon import ProcessingStatus, Sermon
+from app.models.sermon_analysis import SermonAnalysis
+from app.models.taxonomy import Theme, sermon_themes
 from app.models.user import User
 from app.models.user_sermon import UserSermon
 from app.workers.tasks import process_sermon
+
+SUMMARY_EXCERPT_MAX_CHARS = 150
 
 
 @dataclass
 class SubmitSermonResult:
     sermon: Sermon
     status_code: int
+
+
+@dataclass
+class LibraryItem:
+    id: object
+    title: str | None
+    speaker: str | None
+    status: ProcessingStatus
+    duration_seconds: int | None
+    summary_excerpt: str | None
+    themes: list[str]
+    saved_at: object
+
+
+@dataclass
+class LibraryPage:
+    items: list[LibraryItem]
+    page: int
+    page_size: int
+    total: int
 
 
 def _create_sermon(db: DBSession, video_id: str, youtube_url: str) -> Sermon:
@@ -80,3 +105,66 @@ def submit_sermon(db: DBSession, user: User, youtube_url: str) -> SubmitSermonRe
 
     # pending or processing elsewhere, not yet in this user's library
     return SubmitSermonResult(sermon=sermon, status_code=409)
+
+
+def _truncate_summary(summary: str | None) -> str | None:
+    if summary is None:
+        return None
+    if len(summary) <= SUMMARY_EXCERPT_MAX_CHARS:
+        return summary
+    return summary[:SUMMARY_EXCERPT_MAX_CHARS].rstrip() + "..."
+
+
+def _base_library_query(db: DBSession, user: User, theme: str | None, *, count_only: bool = False):
+    if count_only:
+        query = db.query(func.count(Sermon.id.distinct()))
+    else:
+        query = db.query(Sermon, UserSermon.saved_at, SermonAnalysis.summary)
+
+    query = (
+        query.join(UserSermon, UserSermon.sermon_id == Sermon.id)
+        .outerjoin(SermonAnalysis, SermonAnalysis.sermon_id == Sermon.id)
+        .filter(UserSermon.user_id == user.id)
+    )
+    if theme is not None:
+        query = (
+            query.join(sermon_themes, sermon_themes.c.sermon_id == Sermon.id)
+            .join(Theme, Theme.id == sermon_themes.c.theme_id)
+            .filter(Theme.name == theme)
+        )
+    return query
+
+
+def get_library(
+    db: DBSession, user: User, page: int, page_size: int, theme: str | None
+) -> LibraryPage:
+    """List the sermons in a user's library, most recently saved first.
+
+    Scoped strictly to the current user's UserSermon rows - never returns
+    another user's library entries, even for a sermon that's shared/canonical.
+    """
+    total = _base_library_query(db, user, theme, count_only=True).scalar()
+
+    rows = (
+        _base_library_query(db, user, theme)
+        .order_by(UserSermon.saved_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    items = [
+        LibraryItem(
+            id=sermon.id,
+            title=sermon.title,
+            speaker=sermon.speaker,
+            status=sermon.status,
+            duration_seconds=sermon.duration_seconds,
+            summary_excerpt=_truncate_summary(summary),
+            themes=[t.name for t in sermon.themes],
+            saved_at=saved_at,
+        )
+        for sermon, saved_at, summary in rows
+    ]
+
+    return LibraryPage(items=items, page=page, page_size=page_size, total=total)

@@ -1,0 +1,79 @@
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
+
+from app.models.session import Session as SessionModel
+from app.models.user import User
+
+YOUTUBE_URL = "https://www.youtube.com/watch?v=ABC123xyz45"
+
+
+def _authed_client(client, db_session):
+    user = User(google_id="g1", email="g1@example.com")
+    db_session.add(user)
+    db_session.commit()
+    session = SessionModel(
+        token="valid-token", user_id=user.id, expires_at=datetime.now(UTC) + timedelta(days=1)
+    )
+    db_session.add(session)
+    db_session.commit()
+    client.cookies.set("session_token", "valid-token")
+    return user
+
+
+def test_submit_new_sermon_returns_201_with_pending_status(client, db_session):
+    _authed_client(client, db_session)
+
+    with patch("app.services.sermon_service.process_sermon"):
+        response = client.post("/v1/sermons", json={"youtube_url": YOUTUBE_URL})
+
+    body = response.json()
+    assert response.status_code == 201
+    assert body["success"] is True
+    assert body["data"]["status"] == "pending"
+
+
+def test_submit_without_session_returns_401(client):
+    response = client.post("/v1/sermons", json={"youtube_url": YOUTUBE_URL})
+
+    assert response.status_code == 401
+
+
+def test_submit_unparseable_url_returns_400(client, db_session):
+    _authed_client(client, db_session)
+
+    response = client.post("/v1/sermons", json={"youtube_url": "https://example.com/nope"})
+
+    body = response.json()
+    assert response.status_code == 400
+    assert body["success"] is False
+    assert body["error"]["code"] == "invalid_youtube_url"
+
+
+def test_list_sermons_without_session_returns_401(client):
+    response = client.get("/v1/sermons")
+
+    assert response.status_code == 401
+
+
+def test_list_sermons_returns_empty_page_for_new_user(client, db_session):
+    _authed_client(client, db_session)
+
+    response = client.get("/v1/sermons")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["data"]["items"] == []
+    assert body["data"]["total"] == 0
+    assert body["data"]["page"] == 1
+    assert body["data"]["page_size"] == 20
+
+
+def test_list_sermons_respects_page_size_query_param(client, db_session):
+    _authed_client(client, db_session)
+
+    response = client.get("/v1/sermons?page=2&page_size=5")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["data"]["page"] == 2
+    assert body["data"]["page_size"] == 5

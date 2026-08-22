@@ -16,6 +16,7 @@ dependencies = [
     "psycopg2-binary>=2.9.12",
     "redis>=8.1.0",
     "sqlalchemy>=2.0.52",
+    "uuid6>=2025.0.1",
     "youtube-transcript-api>=1.2.4",
 ]
 
@@ -44,6 +45,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+exclude=["versions/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

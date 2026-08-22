@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     llm_api_key: str
     llm_model_name: str
     llm_embedding_model_name: str
+    llm_embedding_dimensions: int = 768
 
     google_client_id: str
     google_client_secret: str

@@ -72,3 +72,19 @@ def test_embed_batch_preserves_order_for_multiple_inputs():
     assert result[0][0] == 0.1
     assert result[1][0] == 0.2
     assert result[2][0] == 0.3
+
+
+def test_embed_batch_requests_configured_dimension():
+    mock_response = MagicMock()
+    mock_response.data = [MagicMock(embedding=[0.1] * 768)]
+
+    with patch("app.llm.client.OpenAI") as mock_openai_cls:
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.embeddings.create.return_value = mock_response
+
+        embed_batch(["some text"])
+
+    mock_client.embeddings.create.assert_called_once()
+    _, kwargs = mock_client.embeddings.create.call_args
+    assert kwargs.get("dimensions") == 768

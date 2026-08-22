@@ -23,5 +23,6 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
     response = client.embeddings.create(
         model=settings.llm_embedding_model_name,
         input=texts,
+        dimensions=settings.llm_embedding_dimensions,
     )
     return [item.embedding for item in response.data]

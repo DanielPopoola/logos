@@ -58,4 +58,4 @@ def analyze_transcript(transcript: str) -> SermonAnalysisResult:
     )
     if result is None:
         raise AnalysisParseError("LLM did not return a parseable structured response")
-    return result  # ty: ignore[invalid-return-type]
+    return result

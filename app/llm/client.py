@@ -2,12 +2,14 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from app.config import settings
+from app.llm.retry import retry_on_transient_error
 
 
 def _client() -> OpenAI:
     return OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
 
 
+@retry_on_transient_error()
 def generate_structured(prompt: str, response_schema: type[BaseModel]) -> BaseModel | None:
     client = _client()
     completion = client.beta.chat.completions.parse(
@@ -18,6 +20,7 @@ def generate_structured(prompt: str, response_schema: type[BaseModel]) -> BaseMo
     return completion.choices[0].message.parsed
 
 
+@retry_on_transient_error()
 def embed_batch(texts: list[str]) -> list[list[float]]:
     client = _client()
     response = client.embeddings.create(

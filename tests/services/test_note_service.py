@@ -6,7 +6,13 @@ from app.models.sermon import ProcessingStatus, Sermon
 from app.models.user import User
 from app.models.user_note import UserNote
 from app.models.user_sermon import UserSermon
-from app.services.note_service import NoteNotFoundError, create_note, delete_note, update_note
+from app.repositories.note_repository import NoteRepository
+from app.repositories.sermon_repository import SermonRepository
+from app.services.note_service import NoteNotFoundError, NoteService
+
+
+def _note_service(db_session) -> NoteService:
+    return NoteService(db_session, NoteRepository(db_session), SermonRepository(db_session))
 
 
 def _user(db_session, google_id="u1") -> User:
@@ -30,10 +36,11 @@ def _sermon_in_library(db_session, user: User, video_id: str) -> Sermon:
 
 
 def test_create_note_persists_owned_by_current_user(db_session):
+    service = _note_service(db_session)
     user = _user(db_session)
     sermon = _sermon_in_library(db_session, user, "NOTE1")
 
-    note = create_note(db_session, user, sermon.id, "My reflection")
+    note = service.create_note(user, sermon.id, "My reflection")
 
     assert note.content == "My reflection"
     stored = db_session.query(UserNote).filter_by(id=note.id).one()
@@ -42,6 +49,7 @@ def test_create_note_persists_owned_by_current_user(db_session):
 
 
 def test_create_note_on_sermon_not_in_library_raises_not_found(db_session):
+    service = _note_service(db_session)
     user = _user(db_session)
     sermon = Sermon(
         youtube_video_id="NOTE2",
@@ -53,15 +61,16 @@ def test_create_note_on_sermon_not_in_library_raises_not_found(db_session):
     # never saved to user's library
 
     with pytest.raises(NoteNotFoundError):
-        create_note(db_session, user, sermon.id, "My reflection")
+        service.create_note(user, sermon.id, "My reflection")
 
 
 def test_update_note_changes_content_for_owner(db_session):
+    service = _note_service(db_session)
     user = _user(db_session)
     sermon = _sermon_in_library(db_session, user, "NOTE3")
-    note = create_note(db_session, user, sermon.id, "Original")
+    note = service.create_note(user, sermon.id, "Original")
 
-    updated = update_note(db_session, user, note.id, "Updated")
+    updated = service.update_note(user, note.id, "Updated")
 
     assert updated.content == "Updated"
     db_session.refresh(note)
@@ -69,49 +78,54 @@ def test_update_note_changes_content_for_owner(db_session):
 
 
 def test_update_note_by_non_owner_raises_not_found(db_session):
+    service = _note_service(db_session)
     owner = _user(db_session, "owner")
     other = _user(db_session, "other")
     sermon = _sermon_in_library(db_session, owner, "NOTE4")
-    note = create_note(db_session, owner, sermon.id, "Original")
+    note = service.create_note(owner, sermon.id, "Original")
 
     with pytest.raises(NoteNotFoundError):
-        update_note(db_session, other, note.id, "Hijacked")
+        service.update_note(other, note.id, "Hijacked")
 
     db_session.refresh(note)
     assert note.content == "Original"
 
 
 def test_update_nonexistent_note_raises_not_found(db_session):
+    service = _note_service(db_session)
     user = _user(db_session)
 
     with pytest.raises(NoteNotFoundError):
-        update_note(db_session, user, uuid.uuid4(), "New content")
+        service.update_note(user, uuid.uuid4(), "New content")
 
 
 def test_delete_note_removes_it_for_owner(db_session):
+    service = _note_service(db_session)
     user = _user(db_session)
     sermon = _sermon_in_library(db_session, user, "NOTE5")
-    note = create_note(db_session, user, sermon.id, "To delete")
+    note = service.create_note(user, sermon.id, "To delete")
 
-    delete_note(db_session, user, note.id)
+    service.delete_note(user, note.id)
 
     assert db_session.query(UserNote).filter_by(id=note.id).count() == 0
 
 
 def test_delete_note_by_non_owner_raises_not_found(db_session):
+    service = _note_service(db_session)
     owner = _user(db_session, "owner")
     other = _user(db_session, "other")
     sermon = _sermon_in_library(db_session, owner, "NOTE6")
-    note = create_note(db_session, owner, sermon.id, "Protected")
+    note = service.create_note(owner, sermon.id, "Protected")
 
     with pytest.raises(NoteNotFoundError):
-        delete_note(db_session, other, note.id)
+        service.delete_note(other, note.id)
 
     assert db_session.query(UserNote).filter_by(id=note.id).count() == 1
 
 
 def test_delete_nonexistent_note_raises_not_found(db_session):
+    service = _note_service(db_session)
     user = _user(db_session)
 
     with pytest.raises(NoteNotFoundError):
-        delete_note(db_session, user, uuid.uuid4())
+        service.delete_note(user, uuid.uuid4())

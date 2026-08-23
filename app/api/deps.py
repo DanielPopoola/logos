@@ -8,6 +8,9 @@ from app.database import get_db
 from app.errors import AppException
 from app.models.session import Session as SessionModel
 from app.models.user import User
+from app.repositories.note_repository import NoteRepository
+from app.repositories.sermon_repository import SermonRepository
+from app.services.note_service import NoteService
 
 
 def get_current_user(
@@ -25,3 +28,19 @@ def get_current_user(
         raise AppException(status_code=401, code="session_expired", message="Session has expired")
 
     return db.query(User).filter_by(id=session.user_id).first()  # ty: ignore[invalid-return-type]
+
+
+def get_note_repository(db: Annotated[DBSession, Depends(get_db)]) -> NoteRepository:
+    return NoteRepository(db)
+
+
+def get_sermon_repository(db: Annotated[DBSession, Depends(get_db)]) -> SermonRepository:
+    return SermonRepository(db)
+
+
+def get_note_service(
+    db: Annotated[DBSession, Depends(get_db)],
+    notes: Annotated[NoteRepository, Depends(get_note_repository)],
+    sermons: Annotated[SermonRepository, Depends(get_sermon_repository)],
+) -> NoteService:
+    return NoteService(db, notes, sermons)

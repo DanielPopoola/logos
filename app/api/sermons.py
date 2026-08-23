@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session as DBSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_note_service
 from app.database import get_db
 from app.errors import AppException
 from app.models.sermon import ProcessingStatus
@@ -18,8 +18,7 @@ from app.schemas.sermon import (
     SermonSubmissionOut,
     SubmitSermonRequest,
 )
-from app.services.note_service import NoteNotFoundError as SermonNoteNotFoundError
-from app.services.note_service import create_note
+from app.services.note_service import NoteNotFoundError, NoteService
 from app.services.sermon_service import (
     SermonNotFoundError,
     delete_from_library,
@@ -99,11 +98,11 @@ def create_sermon_note(
     sermon_id: uuid.UUID,
     body: CreateNoteRequest,
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[DBSession, Depends(get_db)],
+    note_service: Annotated[NoteService, Depends(get_note_service)],
 ):
     try:
-        note = create_note(db, user, sermon_id, body.content)
-    except SermonNoteNotFoundError as e:
+        note = note_service.create_note(user, sermon_id, body.content)
+    except NoteNotFoundError as e:
         raise AppException(status_code=404, code="sermon_not_found", message=str(e)) from e
 
     return APIResponse.ok(NoteCreateOut.model_validate(note, from_attributes=True))

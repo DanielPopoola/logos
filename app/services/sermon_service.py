@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import func
@@ -9,10 +10,18 @@ from app.models.sermon import ProcessingStatus, Sermon
 from app.models.sermon_analysis import SermonAnalysis
 from app.models.taxonomy import Theme, sermon_themes
 from app.models.user import User
+from app.models.user_note import UserNote
 from app.models.user_sermon import UserSermon
 from app.workers.tasks import process_sermon
 
 SUMMARY_EXCERPT_MAX_CHARS = 150
+
+
+class SermonNotFoundError(Exception):
+    """Raised when a sermon doesn't exist, or exists but isn't in the
+    requesting user's library. Deliberately the same error for both cases -
+    the API layer must not let a caller distinguish "doesn't exist" from
+    "exists but isn't yours"."""
 
 
 @dataclass
@@ -112,7 +121,9 @@ def _truncate_summary(summary: str | None) -> str | None:
         return None
     if len(summary) <= SUMMARY_EXCERPT_MAX_CHARS:
         return summary
-    return summary[:SUMMARY_EXCERPT_MAX_CHARS].rstrip() + "..."
+    ellipsis = "..."
+    truncate_at = SUMMARY_EXCERPT_MAX_CHARS - len(ellipsis)
+    return summary[:truncate_at].rstrip() + ellipsis
 
 
 def _base_library_query(db: DBSession, user: User, theme: str | None, *, count_only: bool = False):
@@ -168,3 +179,90 @@ def get_library(
     ]
 
     return LibraryPage(items=items, page=page, page_size=page_size, total=total)
+
+
+@dataclass
+class SermonAnalysisOut:
+    summary: str | None
+    key_teachings: list[str]
+    action_points: list[str]
+    reflection_questions: list[str]
+
+
+@dataclass
+class NoteOut:
+    id: uuid.UUID
+    content: str
+    created_at: object
+
+
+@dataclass
+class SermonDetail:
+    id: uuid.UUID
+    youtube_url: str
+    title: str | None
+    speaker: str | None
+    duration_seconds: int | None
+    status: ProcessingStatus
+    failure_reason: str | None
+    saved_at: object
+    analysis: SermonAnalysisOut | None
+    themes: list[str]
+    bible_references: list[str]
+    notes: list[NoteOut]
+
+
+def _get_owned_sermon(db: DBSession, user: User, sermon_id: uuid.UUID) -> tuple[Sermon, object]:
+    """Fetch a sermon only if it's in the given user's library. Raises
+    SermonNotFoundError otherwise - covers both "doesn't exist" and "not
+    yours" with the same outcome, so a 404 never leaks existence.
+    """
+    row = (
+        db.query(Sermon, UserSermon.saved_at)
+        .join(UserSermon, UserSermon.sermon_id == Sermon.id)
+        .filter(Sermon.id == sermon_id, UserSermon.user_id == user.id)
+        .first()
+    )
+    if row is None:
+        raise SermonNotFoundError(f"Sermon {sermon_id} not found in this user's library")
+    return row  # ty: ignore[invalid-return-type]
+
+
+def get_sermon_detail(db: DBSession, user: User, sermon_id: uuid.UUID) -> SermonDetail:
+    sermon, saved_at = _get_owned_sermon(db, user, sermon_id)
+
+    analysis_row = db.query(SermonAnalysis).filter_by(sermon_id=sermon.id).first()
+    analysis = (
+        SermonAnalysisOut(
+            summary=analysis_row.summary,
+            key_teachings=analysis_row.key_teachings or [],  # ty: ignore[invalid-argument-type]
+            action_points=analysis_row.action_points or [],  # ty: ignore[invalid-argument-type]
+            reflection_questions=analysis_row.reflection_questions
+            or [],  # ty: ignore[invalid-argument-type]
+        )
+        if analysis_row is not None
+        else None
+    )
+
+    notes = [
+        NoteOut(id=n.id, content=n.content, created_at=n.created_at)
+        for n in db.query(UserNote)
+        .filter_by(user_id=user.id, sermon_id=sermon.id)
+        .order_by(UserNote.created_at.desc())
+        .all()
+    ]
+
+    return SermonDetail(
+        id=sermon.id,
+        youtube_url=sermon.youtube_url,
+        title=sermon.title,
+        speaker=sermon.speaker,
+        duration_seconds=sermon.duration_seconds,
+        status=sermon.status,
+        failure_reason=sermon.failure_reason,
+        saved_at=saved_at,
+        analysis=analysis,
+        themes=[t.name for t in sermon.themes],
+        bible_references=[r.display_text for r in sermon.bible_references],
+        notes=notes,
+    )

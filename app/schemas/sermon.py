@@ -32,3 +32,31 @@ class LibraryPageOut(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class SermonAnalysisOutSchema(BaseModel):
+    summary: str | None
+    key_teachings: list[str]
+    action_points: list[str]
+    reflection_questions: list[str]
+
+
+class NoteOutSchema(BaseModel):
+    id: uuid.UUID
+    content: str
+    created_at: datetime
+
+
+class SermonDetailOut(BaseModel):
+    id: uuid.UUID
+    youtube_url: str
+    title: str | None
+    speaker: str | None
+    duration_seconds: int | None
+    status: ProcessingStatus
+    failure_reason: str | None
+    saved_at: datetime
+    analysis: SermonAnalysisOutSchema | None
+    themes: list[str]
+    bible_references: list[str]
+    notes: list[NoteOutSchema]

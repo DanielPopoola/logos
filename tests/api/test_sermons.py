@@ -77,3 +77,69 @@ def test_list_sermons_respects_page_size_query_param(client, db_session):
     assert response.status_code == 200
     assert body["data"]["page"] == 2
     assert body["data"]["page_size"] == 5
+
+
+def test_get_sermon_detail_without_session_returns_401(client):
+    import uuid
+
+    response = client.get(f"/v1/sermons/{uuid.uuid4()}")
+
+    assert response.status_code == 401
+
+
+def test_get_sermon_detail_not_in_library_returns_404(client, db_session):
+    _authed_client(client, db_session)
+    import uuid
+
+    response = client.get(f"/v1/sermons/{uuid.uuid4()}")
+
+    body = response.json()
+    assert response.status_code == 404
+    assert body["success"] is False
+    assert body["error"]["code"] == "sermon_not_found"
+
+
+def test_get_completed_sermon_detail_returns_full_payload(client, db_session):
+    from app.models.sermon import ProcessingStatus, Sermon
+    from app.models.user_sermon import UserSermon
+
+    user = _authed_client(client, db_session)
+    sermon = Sermon(
+        youtube_video_id="HTTP1",
+        youtube_url="https://youtu.be/HTTP1",
+        title="A Sermon",
+        status=ProcessingStatus.COMPLETED,
+    )
+    db_session.add(sermon)
+    db_session.flush()
+    db_session.add(UserSermon(user_id=user.id, sermon_id=sermon.id))
+    db_session.commit()
+
+    response = client.get(f"/v1/sermons/{sermon.id}")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["data"]["title"] == "A Sermon"
+    assert body["data"]["notes"] == []
+
+
+def test_get_processing_sermon_returns_202_with_null_analysis(client, db_session):
+    from app.models.sermon import ProcessingStatus, Sermon
+    from app.models.user_sermon import UserSermon
+
+    user = _authed_client(client, db_session)
+    sermon = Sermon(
+        youtube_video_id="HTTP2",
+        youtube_url="https://youtu.be/HTTP2",
+        status=ProcessingStatus.PROCESSING,
+    )
+    db_session.add(sermon)
+    db_session.flush()
+    db_session.add(UserSermon(user_id=user.id, sermon_id=sermon.id))
+    db_session.commit()
+
+    response = client.get(f"/v1/sermons/{sermon.id}")
+
+    body = response.json()
+    assert response.status_code == 202
+    assert body["data"]["analysis"] is None

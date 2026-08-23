@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session as DBSession
 
 from app.api.deps import get_current_user
@@ -18,6 +18,7 @@ from app.schemas.sermon import (
 )
 from app.services.sermon_service import (
     SermonNotFoundError,
+    delete_from_library,
     get_library,
     get_sermon_detail,
     submit_sermon,
@@ -71,3 +72,15 @@ def get_sermon(
         return APIResponse.ok({"id": detail.id, "status": detail.status, "analysis": None})
 
     return APIResponse.ok(SermonDetailOut.model_validate(detail, from_attributes=True))
+
+
+@router.delete("/{sermon_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sermon(
+    sermon_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    try:
+        delete_from_library(db, user, sermon_id)
+    except SermonNotFoundError as e:
+        raise AppException(status_code=404, code="sermon_not_found", message=str(e)) from e

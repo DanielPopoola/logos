@@ -143,3 +143,45 @@ def test_get_processing_sermon_returns_202_with_null_analysis(client, db_session
     body = response.json()
     assert response.status_code == 202
     assert body["data"]["analysis"] is None
+
+
+def test_delete_sermon_without_session_returns_401(client):
+    import uuid
+
+    response = client.delete(f"/v1/sermons/{uuid.uuid4()}")
+
+    assert response.status_code == 401
+
+
+def test_delete_sermon_not_in_library_returns_404(client, db_session):
+    _authed_client(client, db_session)
+    import uuid
+
+    response = client.delete(f"/v1/sermons/{uuid.uuid4()}")
+
+    body = response.json()
+    assert response.status_code == 404
+    assert body["error"]["code"] == "sermon_not_found"
+
+
+def test_delete_sermon_removes_it_from_library(client, db_session):
+    from app.models.sermon import ProcessingStatus, Sermon
+    from app.models.user_sermon import UserSermon
+
+    user = _authed_client(client, db_session)
+    sermon = Sermon(
+        youtube_video_id="HTTP3",
+        youtube_url="https://youtu.be/HTTP3",
+        status=ProcessingStatus.COMPLETED,
+    )
+    db_session.add(sermon)
+    db_session.flush()
+    db_session.add(UserSermon(user_id=user.id, sermon_id=sermon.id))
+    db_session.commit()
+
+    response = client.delete(f"/v1/sermons/{sermon.id}")
+
+    assert response.status_code == 204
+    assert db_session.query(UserSermon).filter_by(user_id=user.id, sermon_id=sermon.id).count() == 0
+    # canonical Sermon row survives
+    assert db_session.query(Sermon).filter_by(id=sermon.id).count() == 1

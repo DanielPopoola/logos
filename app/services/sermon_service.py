@@ -266,3 +266,18 @@ def get_sermon_detail(db: DBSession, user: User, sermon_id: uuid.UUID) -> Sermon
         bible_references=[r.display_text for r in sermon.bible_references],
         notes=notes,
     )
+
+
+def delete_from_library(db: DBSession, user: User, sermon_id: uuid.UUID) -> None:
+    """Remove a sermon from the user's library.
+
+    Only ever deletes the UserSermon join row - the canonical Sermon (and any
+    other user's UserSermon pointing at it) is untouched, since the sermon is
+    shared infrastructure, not something any single user owns.
+    """
+    user_sermon = db.query(UserSermon).filter_by(user_id=user.id, sermon_id=sermon_id).first()
+    if user_sermon is None:
+        raise SermonNotFoundError(f"Sermon {sermon_id} not found in this user's library")
+
+    db.delete(user_sermon)
+    db.commit()

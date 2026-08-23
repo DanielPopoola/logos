@@ -11,11 +11,15 @@ from app.models.sermon import ProcessingStatus
 from app.models.user import User
 from app.schemas.response import APIResponse
 from app.schemas.sermon import (
+    CreateNoteRequest,
     LibraryPageOut,
+    NoteCreateOut,
     SermonDetailOut,
     SermonSubmissionOut,
     SubmitSermonRequest,
 )
+from app.services.note_service import NoteNotFoundError as SermonNoteNotFoundError
+from app.services.note_service import create_note
 from app.services.sermon_service import (
     SermonNotFoundError,
     delete_from_library,
@@ -84,3 +88,22 @@ def delete_sermon(
         delete_from_library(db, user, sermon_id)
     except SermonNotFoundError as e:
         raise AppException(status_code=404, code="sermon_not_found", message=str(e)) from e
+
+
+@router.post(
+    "/{sermon_id}/notes",
+    status_code=status.HTTP_201_CREATED,
+    response_model=APIResponse[NoteCreateOut],
+)
+def create_sermon_note(
+    sermon_id: uuid.UUID,
+    body: CreateNoteRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    try:
+        note = create_note(db, user, sermon_id, body.content)
+    except SermonNoteNotFoundError as e:
+        raise AppException(status_code=404, code="sermon_not_found", message=str(e)) from e
+
+    return APIResponse.ok(NoteCreateOut.model_validate(note, from_attributes=True))

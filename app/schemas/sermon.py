@@ -60,3 +60,23 @@ class SermonDetailOut(BaseModel):
     themes: list[str]
     bible_references: list[str]
     notes: list[NoteOutSchema]
+
+
+class CreateNoteRequest(BaseModel):
+    content: str
+
+
+class UpdateNoteRequest(BaseModel):
+    content: str
+
+
+class NoteCreateOut(BaseModel):
+    id: uuid.UUID
+    content: str
+    created_at: datetime
+
+
+class NoteUpdateOut(BaseModel):
+    id: uuid.UUID
+    content: str
+    updated_at: datetime

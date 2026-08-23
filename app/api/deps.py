@@ -11,6 +11,7 @@ from app.models.user import User
 from app.repositories.note_repository import NoteRepository
 from app.repositories.sermon_repository import SermonRepository
 from app.services.note_service import NoteService
+from app.services.sermon_service import SermonService
 
 
 def get_current_user(
@@ -44,3 +45,11 @@ def get_note_service(
     sermons: Annotated[SermonRepository, Depends(get_sermon_repository)],
 ) -> NoteService:
     return NoteService(db, notes, sermons)
+
+
+def get_sermon_service(
+    db: Annotated[DBSession, Depends(get_db)],
+    sermons: Annotated[SermonRepository, Depends(get_sermon_repository)],
+    notes: Annotated[NoteRepository, Depends(get_note_repository)],
+) -> SermonService:
+    return SermonService(db, sermons, notes)

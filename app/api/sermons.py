@@ -2,10 +2,8 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
-from sqlalchemy.orm import Session as DBSession
 
-from app.api.deps import get_current_user, get_note_service
-from app.database import get_db
+from app.api.deps import get_current_user, get_note_service, get_sermon_service
 from app.errors import AppException
 from app.models.sermon import ProcessingStatus
 from app.models.user import User
@@ -19,13 +17,7 @@ from app.schemas.sermon import (
     SubmitSermonRequest,
 )
 from app.services.note_service import NoteNotFoundError, NoteService
-from app.services.sermon_service import (
-    SermonNotFoundError,
-    delete_from_library,
-    get_library,
-    get_sermon_detail,
-    submit_sermon,
-)
+from app.services.sermon_service import SermonNotFoundError, SermonService
 
 router = APIRouter()
 
@@ -35,10 +27,10 @@ def create_sermon(
     body: SubmitSermonRequest,
     response: Response,
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[DBSession, Depends(get_db)],
+    sermon_service: Annotated[SermonService, Depends(get_sermon_service)],
 ):
     try:
-        result = submit_sermon(db, user, body.youtube_url)
+        result = sermon_service.submit_sermon(user, body.youtube_url)
     except ValueError as e:
         raise AppException(status_code=400, code="invalid_youtube_url", message=str(e)) from e
 
@@ -49,12 +41,12 @@ def create_sermon(
 @router.get("", response_model=APIResponse[LibraryPageOut])
 def list_sermons(
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[DBSession, Depends(get_db)],
+    sermon_service: Annotated[SermonService, Depends(get_sermon_service)],
     theme: str | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
-    result = get_library(db, user, page=page, page_size=page_size, theme=theme)
+    result = sermon_service.get_library(user, page=page, page_size=page_size, theme=theme)
     return APIResponse.ok(LibraryPageOut.model_validate(result, from_attributes=True))
 
 
@@ -63,10 +55,10 @@ def get_sermon(
     sermon_id: uuid.UUID,
     response: Response,
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[DBSession, Depends(get_db)],
+    sermon_service: Annotated[SermonService, Depends(get_sermon_service)],
 ):
     try:
-        detail = get_sermon_detail(db, user, sermon_id)
+        detail = sermon_service.get_sermon_detail(user, sermon_id)
     except SermonNotFoundError as e:
         raise AppException(status_code=404, code="sermon_not_found", message=str(e)) from e
 
@@ -81,10 +73,10 @@ def get_sermon(
 def delete_sermon(
     sermon_id: uuid.UUID,
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[DBSession, Depends(get_db)],
+    sermon_service: Annotated[SermonService, Depends(get_sermon_service)],
 ):
     try:
-        delete_from_library(db, user, sermon_id)
+        sermon_service.delete_from_library(user, sermon_id)
     except SermonNotFoundError as e:
         raise AppException(status_code=404, code="sermon_not_found", message=str(e)) from e
 

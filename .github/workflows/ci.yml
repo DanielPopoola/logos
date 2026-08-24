@@ -32,6 +32,13 @@ jobs:
       DATABASE_URL: postgresql://logos:logos@localhost:5432/logos
       REDIS_URL: redis://localhost:6379/0
       ENVIRONMENT: test
+      LLM_BASE_URL: http://localhost:9999
+      LLM_API_KEY: test-key
+      LLM_MODEL_NAME: test-model
+      LLM_EMBEDDING_MODEL_NAME: test-embedding-model
+      GOOGLE_CLIENT_ID: test-client-id
+      GOOGLE_CLIENT_SECRET: test-client-secret
+      GOOGLE_REDIRECT_URI: http://localhost:8000/v1/auth/google/callback
 
     steps:
       - uses: actions/checkout@v4

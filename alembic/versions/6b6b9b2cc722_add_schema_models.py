@@ -108,9 +108,7 @@ def upgrade() -> None:
         "sermon_bible_references",
         sa.Column("sermon_id", sa.UUID(), nullable=False),
         sa.Column("bible_reference_id", sa.UUID(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["bible_reference_id"], ["bible_references.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["bible_reference_id"], ["bible_references.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["sermon_id"], ["sermons.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("sermon_id", "bible_reference_id"),
     )

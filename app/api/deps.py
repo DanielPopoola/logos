@@ -41,13 +41,9 @@ def get_current_user(
     try:
         return auth_service.get_authenticated_user(session_token)
     except InvalidSessionError as e:
-        raise AppException(
-            status_code=401, code="invalid_session", message="Invalid session"
-        ) from e
+        raise AppException(status_code=401, code="invalid_session", message="Invalid session") from e
     except SessionExpiredError as e:
-        raise AppException(
-            status_code=401, code="session_expired", message="Session has expired"
-        ) from e
+        raise AppException(status_code=401, code="session_expired", message="Session has expired") from e
 
 
 def get_note_repository(db: Annotated[DBSession, Depends(get_db)]) -> NoteRepository:

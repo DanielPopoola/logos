@@ -91,10 +91,7 @@ def test_completed_video_new_to_user_only_creates_user_sermon(db_session):
 
     assert result.status_code == 200
     assert db_session.query(Sermon).filter_by(youtube_video_id=VIDEO_ID).count() == 1
-    assert (
-        db_session.query(UserSermon).filter_by(user_id=newcomer.id, sermon_id=sermon.id).count()
-        == 1
-    )
+    assert db_session.query(UserSermon).filter_by(user_id=newcomer.id, sermon_id=sermon.id).count() == 1
     mock_task.delay.assert_not_called()
 
 
@@ -126,10 +123,7 @@ def test_video_still_processing_elsewhere_and_new_to_user_returns_409(db_session
     assert result.status_code == 409
     mock_task.delay.assert_not_called()
     sermon = db_session.query(Sermon).filter_by(youtube_video_id=VIDEO_ID).one()
-    assert (
-        db_session.query(UserSermon).filter_by(user_id=newcomer.id, sermon_id=sermon.id).count()
-        == 0
-    )
+    assert db_session.query(UserSermon).filter_by(user_id=newcomer.id, sermon_id=sermon.id).count() == 0
 
 
 def test_failed_video_new_to_user_resets_to_pending_and_retries(db_session):
@@ -159,10 +153,7 @@ def test_failed_video_new_to_user_resets_to_pending_and_retries(db_session):
     assert job.attempt_count == 0
     assert job.error_message is None
     mock_task.delay.assert_called_once_with(str(sermon.id))
-    assert (
-        db_session.query(UserSermon).filter_by(user_id=newcomer.id, sermon_id=sermon.id).count()
-        == 1
-    )
+    assert db_session.query(UserSermon).filter_by(user_id=newcomer.id, sermon_id=sermon.id).count() == 1
 
 
 def test_unparseable_url_raises_before_touching_db(db_session):
@@ -401,12 +392,8 @@ def test_other_users_library_entry_survives_deletion(db_session):
 
     service.delete_from_library(owner, sermon.id)
 
-    assert (
-        db_session.query(UserSermon).filter_by(user_id=other.id, sermon_id=sermon.id).count() == 1
-    )
-    assert (
-        db_session.query(UserSermon).filter_by(user_id=owner.id, sermon_id=sermon.id).count() == 0
-    )
+    assert db_session.query(UserSermon).filter_by(user_id=other.id, sermon_id=sermon.id).count() == 1
+    assert db_session.query(UserSermon).filter_by(user_id=owner.id, sermon_id=sermon.id).count() == 0
 
 
 def test_deleting_sermon_not_in_library_raises_not_found(db_session):

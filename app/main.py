@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 
 from app.api import auth, notes, sermons
 from app.api.deps import get_current_user
+from app.config import settings
 from app.errors import AppException, app_exception_handler
 from app.models.user import User as UserModel
 
@@ -14,6 +15,12 @@ app.include_router(sermons.router, prefix="/v1/sermons", tags=["sermons"])
 app.include_router(notes.router, prefix="/v1/notes", tags=["notes"])
 
 
-@app.get("/v1/_protected_ping", include_in_schema=False)
-def protected_ping(user: Annotated[UserModel, Depends(get_current_user)]):
-    return {"user_id": str(user.id)}
+if settings.environment in ("test", "development"):
+
+    @app.get("/v1/_protected_ping", include_in_schema=False)
+    def protected_ping(user: Annotated[UserModel, Depends(get_current_user)]):
+        """Test-only fixture route: a thin auth-check endpoint for
+        exercising get_current_user in isolation from any real route's
+        response shape. Never registered in production.
+        """
+        return {"user_id": str(user.id)}

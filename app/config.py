@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     google_client_secret: str
     google_redirect_uri: str
 
+    # Defaults to "production" so a missing/unset env var never accidentally
+    # exposes test-only routes - opting into "test"/"development" must be
+    # explicit.
+    environment: str = "production"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

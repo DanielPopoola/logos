@@ -31,6 +31,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://logos:logos@localhost:5432/logos
       REDIS_URL: redis://localhost:6379/0
+      ENVIRONMENT: test
 
     steps:
       - uses: actions/checkout@v4

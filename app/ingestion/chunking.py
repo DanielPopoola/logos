@@ -1,6 +1,14 @@
 DEFAULT_MAX_CHARS = 1500
 
 
+def _build_chunk(texts: list[str], start: float, end: float) -> dict:
+    return {
+        "text": " ".join(texts).strip(),
+        "start_timestamp": start,
+        "end_timestamp": end,
+    }
+
+
 def chunk_transcript(snippets: list[dict], max_chars: int = DEFAULT_MAX_CHARS) -> list[dict]:
     """Group transcript snippets into chunks, each roughly max_chars long,
     carrying the start/end timestamp of the snippets they contain."""
@@ -18,13 +26,7 @@ def chunk_transcript(snippets: list[dict], max_chars: int = DEFAULT_MAX_CHARS) -
         snippet_end = snippet["start"] + snippet["duration"]
 
         if current_length + len(text) > max_chars and current_texts:
-            chunks.append(
-                {
-                    "text": " ".join(current_texts).strip(),
-                    "start_timestamp": current_start,
-                    "end_timestamp": last_end,
-                }
-            )
+            chunks.append(_build_chunk(current_texts, current_start, last_end))
             current_texts = []
             current_start = snippet["start"]
             current_length = 0
@@ -34,12 +36,6 @@ def chunk_transcript(snippets: list[dict], max_chars: int = DEFAULT_MAX_CHARS) -
         last_end = snippet_end
 
     if current_texts:
-        chunks.append(
-            {
-                "text": " ".join(current_texts).strip(),
-                "start_timestamp": current_start,
-                "end_timestamp": last_end,
-            }
-        )
+        chunks.append(_build_chunk(current_texts, current_start, last_end))
 
     return chunks

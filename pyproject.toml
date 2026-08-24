@@ -19,18 +19,15 @@ dependencies = [
     "uuid6>=2025.0.1",
     "youtube-transcript-api>=1.2.4",
 ]
-
-[project.scripts]
-logos = "logos:main"
-
+ 
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]
 build-backend = "uv_build"
-
+ 
 [tool.uv.build-backend]
 module-name = "app"
 module-root = "."
-
+ 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
@@ -41,20 +38,15 @@ dev = [
     "ruff>=0.16.4",
     "ty>=0.0.73",
 ]
-
+ 
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-exclude = [
-    ".git",
-    ".venv",
-    "versions",
-    "__pycache__",
-]
-
+exclude=["versions/"]
+ 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-
+ 
 [tool.ty]
 # defaults are fine to start; tune later if it gets noisy
 

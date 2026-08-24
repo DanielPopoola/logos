@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -12,8 +14,6 @@ class AppException(Exception):
 
 
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
-    import uuid
-
     body = APIResponse.fail(
         ErrorDetail(code=exc.code, message=exc.message, request_id=str(uuid.uuid4()))
     )

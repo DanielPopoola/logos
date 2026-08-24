@@ -6,6 +6,7 @@ from app.models.sermon_chunk import SermonChunk
 from app.models.session import Session as SessionModel
 from app.models.user import User
 from app.models.user_sermon import UserSermon
+from app.services.search_service import AnswerResult
 
 
 def _authed_client(client, db_session):
@@ -45,42 +46,44 @@ def _sermon_with_chunk(db_session, user, video_id="V1"):
     return sermon
 
 
-def test_search_returns_matching_results(client, db_session):
+def test_ask_returns_answer_with_sources(client, db_session):
     user = _authed_client(client, db_session)
     sermon = _sermon_with_chunk(db_session, user)
 
-    with patch("app.services.search_service.embed_batch", return_value=[[0.1] * 768]):
-        response = client.get("/v1/search", params={"q": "trusting God", "limit": 5})
+    with (
+        patch("app.services.search_service.embed_batch", return_value=[[0.1] * 768]),
+        patch(
+            "app.services.search_service.generate_structured",
+            return_value=AnswerResult(answer="Trust God through hardship."),
+        ),
+    ):
+        response = client.post("/v1/ask", json={"question": "What about trusting God?"})
 
     body = response.json()
     assert response.status_code == 200
-    assert body["success"] is True
-    assert body["data"]["results"][0]["sermon_id"] == str(sermon.id)
-    assert body["data"]["results"][0]["matched_excerpt"] == "on trusting God in hardship"
+    assert body["data"]["answer"] == "Trust God through hardship."
+    assert body["data"]["sources"][0]["sermon_id"] == str(sermon.id)
+    assert body["data"]["sources"][0]["matched_excerpt"] == "on trusting God in hardship"
 
 
-def test_search_without_session_returns_401(client):
-    response = client.get("/v1/search", params={"q": "anything"})
+def test_ask_without_session_returns_401(client):
+    response = client.post("/v1/ask", json={"question": "anything"})
 
     assert response.status_code == 401
 
 
-def test_search_missing_query_returns_422(client, db_session):
+def test_ask_with_empty_library_returns_friendly_answer_no_llm_call(client, db_session):
     _authed_client(client, db_session)
 
-    response = client.get("/v1/search")
-
-    assert response.status_code == 422
-
-
-def test_search_with_empty_library_returns_message_no_llm_call(client, db_session):
-    _authed_client(client, db_session)
-
-    with patch("app.services.search_service.embed_batch") as mock_embed:
-        response = client.get("/v1/search", params={"q": "anything"})
+    with (
+        patch("app.services.search_service.embed_batch") as mock_embed,
+        patch("app.services.search_service.generate_structured") as mock_generate,
+    ):
+        response = client.post("/v1/ask", json={"question": "anything"})
 
     body = response.json()
     mock_embed.assert_not_called()
+    mock_generate.assert_not_called()
     assert response.status_code == 200
-    assert body["data"]["results"] == []
-    assert "don't have any sermons" in body["data"]["message"]
+    assert body["data"]["sources"] == []
+    assert "don't have any sermons" in body["data"]["answer"]

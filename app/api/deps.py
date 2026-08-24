@@ -78,5 +78,6 @@ def get_search_repository(db: Annotated[DBSession, Depends(get_db)]) -> SearchRe
 
 def get_search_service(
     search_repo: Annotated[SearchRepository, Depends(get_search_repository)],
+    sermons: Annotated[SermonRepository, Depends(get_sermon_repository)],
 ) -> SearchService:
-    return SearchService(search_repo)
+    return SearchService(search_repo, sermons)

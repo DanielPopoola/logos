@@ -14,3 +14,20 @@ class SearchResultOut(BaseModel):
 
 class SearchResponseOut(BaseModel):
     results: list[SearchResultOut]
+    message: str | None = None
+
+
+class AskRequest(BaseModel):
+    question: str
+
+
+class SourceOut(BaseModel):
+    sermon_id: uuid.UUID
+    sermon_title: str | None
+    matched_excerpt: str
+    timestamp_seconds: int | None
+
+
+class AskResponseOut(BaseModel):
+    answer: str
+    sources: list[SourceOut]

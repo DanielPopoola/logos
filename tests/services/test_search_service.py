@@ -5,11 +5,12 @@ from app.models.sermon_chunk import SermonChunk
 from app.models.user import User
 from app.models.user_sermon import UserSermon
 from app.repositories.search_repository import SearchRepository
-from app.services.search_service import SearchService
+from app.repositories.sermon_repository import SermonRepository
+from app.services.search_service import AnswerResult, SearchService
 
 
 def _search_service(db_session) -> SearchService:
-    return SearchService(SearchRepository(db_session))
+    return SearchService(SearchRepository(db_session), SermonRepository(db_session))
 
 
 def _user(db_session, google_id="u1") -> User:
@@ -61,8 +62,9 @@ def test_semantic_search_returns_closest_chunk_first(db_session):
 
     query_vector = [0.11] * 768
     with patch("app.services.search_service.embed_batch", return_value=[query_vector]):
-        results = service.semantic_search(user, "trusting God when things are hard", limit=10)
+        response = service.semantic_search(user, "trusting God when things are hard", limit=10)
 
+    results = response.results
     assert results[0].matched_excerpt.startswith("on trusting God in hardship")
     assert results[0].timestamp_seconds == 42
     assert results[0].sermon_id == sermon.id
@@ -85,10 +87,10 @@ def test_semantic_search_never_returns_chunks_outside_users_library(db_session):
     _chunk(db_session, my_sermon, 0, "further match, but mine", [0.5] * 768, start=10)
 
     with patch("app.services.search_service.embed_batch", return_value=[query_vector]):
-        results = service.semantic_search(user, "anything", limit=10)
+        response = service.semantic_search(user, "anything", limit=10)
 
-    assert len(results) == 1
-    assert results[0].sermon_id == my_sermon.id
+    assert len(response.results) == 1
+    assert response.results[0].sermon_id == my_sermon.id
 
 
 def test_semantic_search_respects_limit(db_session):
@@ -101,6 +103,103 @@ def test_semantic_search_respects_limit(db_session):
 
     query_vector = [0.0] * 768
     with patch("app.services.search_service.embed_batch", return_value=[query_vector]):
-        results = service.semantic_search(user, "anything", limit=2)
+        response = service.semantic_search(user, "anything", limit=2)
 
-    assert len(results) == 2
+    assert len(response.results) == 2
+
+
+def test_semantic_search_with_empty_library_skips_embedding_call(db_session):
+    service = _search_service(db_session)
+    user = _user(db_session)
+
+    with patch("app.services.search_service.embed_batch") as mock_embed:
+        response = service.semantic_search(user, "anything", limit=10)
+
+    mock_embed.assert_not_called()
+    assert response.results == []
+    assert "don't have any sermons" in response.message  # ty: ignore[unsupported-operator]
+
+
+def test_answer_question_returns_answer_grounded_in_retrieved_sources(db_session):
+    service = _search_service(db_session)
+    user = _user(db_session)
+    sermon = _sermon_in_library(db_session, user, "V1")
+
+    vector = [0.1] * 768
+    _chunk(db_session, sermon, 0, "on trusting God in hardship", vector, start=42)
+
+    with (
+        patch("app.services.search_service.embed_batch", return_value=[vector]),
+        patch(
+            "app.services.search_service.generate_structured",
+            return_value=AnswerResult(answer="Trust God through hardship, as taught in Romans 8."),
+        ),
+    ):
+        result = service.answer_question(user, "What have these messages taught about prayer?")
+
+    assert result.answer == "Trust God through hardship, as taught in Romans 8."
+    assert result.sources[0].sermon_id == sermon.id
+    assert result.sources[0].matched_excerpt == "on trusting God in hardship"
+    assert result.sources[0].timestamp_seconds == 42
+
+
+def test_answer_question_retrieval_is_isolated_to_users_library(db_session):
+    service = _search_service(db_session)
+    user = _user(db_session, google_id="u1")
+    other_user = _user(db_session, google_id="u2")
+
+    my_sermon = _sermon_in_library(db_session, user, "MINE")
+    other_sermon = _sermon_in_library(db_session, other_user, "THEIRS")
+
+    query_vector = [0.1] * 768
+    _chunk(db_session, other_sermon, 0, "not mine, closest match", query_vector, start=0)
+    _chunk(db_session, my_sermon, 0, "mine, further match", [0.5] * 768, start=10)
+
+    with (
+        patch("app.services.search_service.embed_batch", return_value=[query_vector]),
+        patch(
+            "app.services.search_service.generate_structured",
+            return_value=AnswerResult(answer="Some answer."),
+        ),
+    ):
+        result = service.answer_question(user, "anything")
+
+    assert len(result.sources) == 1
+    assert result.sources[0].sermon_id == my_sermon.id
+
+
+def test_answer_question_sources_map_to_sermon_id_and_title(db_session):
+    service = _search_service(db_session)
+    user = _user(db_session)
+    sermon = _sermon_in_library(db_session, user, "V1", title="Faith Under Fire")
+
+    vector = [0.1] * 768
+    _chunk(db_session, sermon, 0, "excerpt text", vector, start=5)
+
+    with (
+        patch("app.services.search_service.embed_batch", return_value=[vector]),
+        patch(
+            "app.services.search_service.generate_structured",
+            return_value=AnswerResult(answer="Some answer."),
+        ),
+    ):
+        result = service.answer_question(user, "anything")
+
+    assert result.sources[0].sermon_id == sermon.id
+    assert result.sources[0].sermon_title == "Faith Under Fire"
+
+
+def test_answer_question_with_empty_library_skips_llm_call(db_session):
+    service = _search_service(db_session)
+    user = _user(db_session)
+
+    with (
+        patch("app.services.search_service.embed_batch") as mock_embed,
+        patch("app.services.search_service.generate_structured") as mock_generate,
+    ):
+        result = service.answer_question(user, "What did I learn about prayer?")
+
+    mock_embed.assert_not_called()
+    mock_generate.assert_not_called()
+    assert result.sources == []
+    assert "don't have any sermons" in result.answer

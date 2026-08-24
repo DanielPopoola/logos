@@ -7,11 +7,13 @@ from app.database import get_db
 from app.errors import AppException
 from app.models.user import User
 from app.repositories.note_repository import NoteRepository
+from app.repositories.search_repository import SearchRepository
 from app.repositories.sermon_repository import SermonRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService, InvalidSessionError, SessionExpiredError
 from app.services.note_service import NoteService
+from app.services.search_service import SearchService
 from app.services.sermon_service import SermonService
 
 
@@ -68,3 +70,13 @@ def get_sermon_service(
     notes: Annotated[NoteRepository, Depends(get_note_repository)],
 ) -> SermonService:
     return SermonService(db, sermons, notes)
+
+
+def get_search_repository(db: Annotated[DBSession, Depends(get_db)]) -> SearchRepository:
+    return SearchRepository(db)
+
+
+def get_search_service(
+    search_repo: Annotated[SearchRepository, Depends(get_search_repository)],
+) -> SearchService:
+    return SearchService(search_repo)

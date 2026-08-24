@@ -75,6 +75,9 @@ class SearchService:
         self._search_repo = search_repo
         self._sermons = sermons
 
+    def _has_empty_library(self, user: User) -> bool:
+        return self._sermons.count_library(user.id, theme=None) == 0
+
     @staticmethod
     def _truncate_excerpt(text: str) -> str:
         if len(text) <= MATCHED_EXCERPT_MAX_CHARS:
@@ -109,7 +112,7 @@ class SearchService:
         message, without making an embedding call - there's nothing to
         search.
         """
-        if self._sermons.count_library(user.id, theme=None) == 0:
+        if self._has_empty_library(user):
             return SearchResponse(results=[], message=EMPTY_LIBRARY_MESSAGE)
 
         return SearchResponse(results=self._find_results(user, query, limit))
@@ -128,7 +131,7 @@ class SearchService:
         call - there's nothing to search, so paying for either would be
         wasted.
         """
-        if self._sermons.count_library(user.id, theme=None) == 0:
+        if self._has_empty_library(user):
             return AskResult(answer=EMPTY_LIBRARY_ANSWER, sources=[])
 
         results = self._find_results(user, question, RAG_CONTEXT_CHUNK_LIMIT)

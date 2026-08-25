@@ -1,8 +1,20 @@
-import pytest
-from fastapi.testclient import TestClient
+from pathlib import Path
 
-from app.database import SessionLocal, engine, get_db
-from app.main import app
+from dotenv import load_dotenv
+
+# Must run before any `app.*` import below - app.config constructs Settings()
+# at import time, so .env.test has to be loaded first or the override
+# arrives too late. override=True is deliberate: a DATABASE_URL already
+# exported in the shell (or sitting in a dev .env) must not win over the
+# test one - that's exactly the class of bug that let a stray
+# Postman-created row leak into a pytest run.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env.test", override=True)
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.database import SessionLocal, engine, get_db  # noqa: E402
+from app.main import app  # noqa: E402
 
 
 @pytest.fixture

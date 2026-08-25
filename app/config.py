@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # explicit.
     environment: str = "production"
 
+    log_level: str = "INFO"
+    sentry_dsn: str | None = None
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

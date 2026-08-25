@@ -6,9 +6,11 @@ from app.api import ask, auth, notes, search, sermons
 from app.api.deps import get_current_user
 from app.config import settings
 from app.errors import AppException, app_exception_handler
+from app.middleware.request_id import RequestIDMiddleware
 from app.models.user import User as UserModel
 
 app = FastAPI(title="Logos")
+app.add_middleware(RequestIDMiddleware)
 app.add_exception_handler(AppException, app_exception_handler)  # ty: ignore[invalid-argument-type]
 app.include_router(auth.router, prefix="/v1/auth", tags=["auth"])
 app.include_router(sermons.router, prefix="/v1/sermons", tags=["sermons"])

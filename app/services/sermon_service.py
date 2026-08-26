@@ -201,8 +201,7 @@ class SermonService:
                 summary=analysis_row.summary,
                 key_teachings=analysis_row.key_teachings or [],  # ty: ignore[invalid-argument-type]
                 action_points=analysis_row.action_points or [],  # ty: ignore[invalid-argument-type]
-                reflection_questions=analysis_row.reflection_questions
-                or [],  # ty: ignore[invalid-argument-type]
+                reflection_questions=analysis_row.reflection_questions or [],  # ty: ignore[invalid-argument-type]
             )
             if analysis_row is not None
             else None

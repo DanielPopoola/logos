@@ -1,5 +1,6 @@
 import logging
 
+from sentry_sdk import capture_exception
 from sqlalchemy.orm import Session as DBSession
 
 from app.ingestion.analysis import analyze_transcript
@@ -106,6 +107,15 @@ class IngestionService:
         sermon.status = ProcessingStatus.FAILED
         sermon.failure_reason = str(error)
         self._db.commit()
+
+        logger.error(
+            "Ingestion failed for sermon %s (attempt %d): %s",
+            sermon.id,
+            job.attempt_count,
+            error,
+            exc_info=error,
+        )
+        capture_exception(error)
 
     def run(self, sermon_id: str) -> None:
         """Run the full ingestion pipeline for a sermon and persist the

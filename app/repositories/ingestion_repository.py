@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy.orm import Session as DBSession
 
+from app.ingestion.bible_reference import parse_reference
 from app.models.processing_job import ProcessingJob
 from app.models.sermon import Sermon
 from app.models.sermon_analysis import SermonAnalysis
@@ -41,11 +42,21 @@ class IngestionRepository:
         return theme
 
     def get_or_create_bible_reference(self, display_text: str) -> BibleReference:
+        """Raises BibleReferenceParseError (via parse_reference) if
+        display_text doesn't match the expected shape - callers decide
+        whether that should fail the whole ingestion or just skip this one
+        reference.
+        """
         ref = self._db.query(BibleReference).filter_by(display_text=display_text).first()
         if ref is None:
-            book, rest = display_text.split(" ", 1)
-            chapter_part = rest.split(":")[0]
-            ref = BibleReference(book=book, chapter=int(chapter_part), display_text=display_text)
+            parsed = parse_reference(display_text)
+            ref = BibleReference(
+                book=parsed.book,
+                chapter=parsed.chapter,
+                verse_start=parsed.verse_start,
+                verse_end=parsed.verse_end,
+                display_text=display_text,
+            )
             self._db.add(ref)
             self._db.flush()
         return ref

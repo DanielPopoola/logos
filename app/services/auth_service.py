@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -7,6 +8,8 @@ from app.models.session import Session as SessionModel
 from app.models.user import User
 from app.repositories.session_repository import SessionRepository
 from app.repositories.user_repository import UserRepository
+
+logger = logging.getLogger(__name__)
 
 SESSION_TTL_DAYS = 7
 

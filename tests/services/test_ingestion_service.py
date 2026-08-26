@@ -120,3 +120,39 @@ def test_run_stops_retrying_beyond_max_attempts(db_session):
     assert job.attempt_count == MAX_ATTEMPTS
     db_session.refresh(sermon)
     assert sermon.status == "failed"
+
+
+def test_run_skips_unparseable_bible_reference_but_completes(db_session):
+    service = _service(db_session)
+    sermon = _pending_sermon(db_session)
+
+    analysis_with_bad_reference = SermonAnalysisResult(
+        summary=MOCK_ANALYSIS.summary,
+        key_teachings=MOCK_ANALYSIS.key_teachings,
+        themes=MOCK_ANALYSIS.themes,
+        bible_references=["1 Peter 3:8", "See the Bible", "Romans 8:28"],
+        action_points=MOCK_ANALYSIS.action_points,
+        reflection_questions=MOCK_ANALYSIS.reflection_questions,
+    )
+
+    with (
+        patch("app.services.ingestion_service.get_transcript", return_value=MOCK_SNIPPETS),
+        patch("app.services.ingestion_service.chunk_transcript", return_value=MOCK_CHUNKS),
+        patch(
+            "app.services.ingestion_service.analyze_transcript",
+            return_value=analysis_with_bad_reference,
+        ),
+        patch("app.services.ingestion_service.embed_chunks", return_value=MOCK_EMBEDDINGS),
+    ):
+        service.run(str(sermon.id))
+
+    db_session.refresh(sermon)
+    assert sermon.status == "completed"
+
+    ref_texts = {
+        r.display_text
+        for r in db_session.query(BibleReference)
+        .join(BibleReference.sermons)
+        .filter(Sermon.id == sermon.id)
+    }
+    assert ref_texts == {"1 Peter 3:8", "Romans 8:28"}

@@ -1,12 +1,15 @@
+import logging
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
-from app.api import ask, auth, notes, search, sermons
+from app.api import ask, auth, health, notes, search, sermons
 from app.api.deps import get_current_user
 from app.config import settings
+from app.database import engine
 from app.errors import AppException, app_exception_handler
 from app.logging_config import configure_logging
 from app.middleware.request_id import RequestIDMiddleware
@@ -15,12 +18,23 @@ from app.models.user import User as UserModel
 from app.sentry_config import init_sentry
 
 configure_logging()
+logger = logging.getLogger(__name__)
+
 # FastAPI is built on Starlette - both integrations are required together,
 # per Sentry's docs, or request-level context (route, method) won't be
 # captured on errors.
 init_sentry([StarletteIntegration(), FastApiIntegration()])
 
-app = FastAPI(title="Logos")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Application startup")
+    yield
+    logger.info("Application shutdown: disposing DB connection pool")
+    engine.dispose()
+
+
+app = FastAPI(title="Logos", lifespan=lifespan)
 app.add_middleware(RequestIDMiddleware)
 # Added last so it's outermost (Starlette's add_middleware prepends) - this
 # guarantees request_id is already set by RequestIDMiddleware before any
@@ -29,6 +43,7 @@ app.add_middleware(RequestIDMiddleware)
 # add_exception_handler(Exception, ...).
 app.add_middleware(UnhandledExceptionMiddleware)
 app.add_exception_handler(AppException, app_exception_handler)  # ty: ignore[invalid-argument-type]
+app.include_router(health.router)
 app.include_router(auth.router, prefix="/v1/auth", tags=["auth"])
 app.include_router(sermons.router, prefix="/v1/sermons", tags=["sermons"])
 app.include_router(notes.router, prefix="/v1/notes", tags=["notes"])

@@ -1,6 +1,9 @@
+import logging
+
 from sqlalchemy.orm import Session as DBSession
 
 from app.ingestion.analysis import analyze_transcript
+from app.ingestion.bible_reference import BibleReferenceParseError
 from app.ingestion.chunking import chunk_transcript
 from app.ingestion.embeddings import embed_chunks
 from app.ingestion.youtube import get_transcript
@@ -9,6 +12,8 @@ from app.models.sermon import ProcessingStatus, Sermon
 from app.models.sermon_analysis import SermonAnalysis
 from app.models.sermon_chunk import SermonChunk
 from app.repositories.ingestion_repository import IngestionRepository
+
+logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 
@@ -83,7 +88,15 @@ class IngestionService:
                 sermon.themes.append(theme)
 
         for ref_text in analysis_result.bible_references:
-            ref = self._repo.get_or_create_bible_reference(ref_text)
+            try:
+                ref = self._repo.get_or_create_bible_reference(ref_text)
+            except BibleReferenceParseError:
+                logger.warning(
+                    "Skipping unparseable Bible reference %r for sermon %s",
+                    ref_text,
+                    sermon.id,
+                )
+                continue
             if ref not in sermon.bible_references:
                 sermon.bible_references.append(ref)
 

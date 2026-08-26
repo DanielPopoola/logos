@@ -1,3 +1,4 @@
+import logging
 import uuid
 from dataclasses import dataclass
 
@@ -10,6 +11,8 @@ from app.models.user import User
 from app.repositories.note_repository import NoteRepository
 from app.repositories.sermon_repository import SermonRepository
 from app.workers.tasks import process_sermon
+
+logger = logging.getLogger(__name__)
 
 SUMMARY_EXCERPT_MAX_CHARS = 150
 
@@ -198,7 +201,8 @@ class SermonService:
                 summary=analysis_row.summary,
                 key_teachings=analysis_row.key_teachings or [],  # ty: ignore[invalid-argument-type]
                 action_points=analysis_row.action_points or [],  # ty: ignore[invalid-argument-type]
-                reflection_questions=analysis_row.reflection_questions or [],  # ty: ignore[invalid-argument-type]
+                reflection_questions=analysis_row.reflection_questions
+                or [],  # ty: ignore[invalid-argument-type]
             )
             if analysis_row is not None
             else None

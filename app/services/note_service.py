@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from sqlalchemy.orm import Session as DBSession
@@ -6,6 +7,8 @@ from app.models.user import User
 from app.models.user_note import UserNote
 from app.repositories.note_repository import NoteRepository
 from app.repositories.sermon_repository import SermonRepository
+
+logger = logging.getLogger(__name__)
 
 
 class NoteNotFoundError(Exception):

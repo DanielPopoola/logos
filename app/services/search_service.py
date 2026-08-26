@@ -1,3 +1,4 @@
+import logging
 import uuid
 from dataclasses import dataclass
 
@@ -7,6 +8,8 @@ from app.llm.client import embed_batch, generate_structured
 from app.models.user import User
 from app.repositories.search_repository import SearchRepository
 from app.repositories.sermon_repository import SermonRepository
+
+logger = logging.getLogger(__name__)
 
 MATCHED_EXCERPT_MAX_CHARS = 200
 RAG_CONTEXT_CHUNK_LIMIT = 8

@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
@@ -12,7 +12,15 @@ from app.database import Base
 
 class SermonChunk(Base):
     __tablename__ = "sermon_chunks"
-    __table_args__ = (UniqueConstraint("sermon_id", "chunk_index"),)
+    __table_args__ = (
+        UniqueConstraint("sermon_id", "chunk_index"),
+        Index(
+            "ix_sermon_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     sermon_id: Mapped[uuid.UUID] = mapped_column(

@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import selectinload
 
 from app.models.sermon import Sermon
 from app.models.sermon_analysis import SermonAnalysis
@@ -58,7 +59,9 @@ class SermonRepository:
         if count_only:
             query = self._db.query(func.count(Sermon.id.distinct()))
         else:
-            query = self._db.query(Sermon, UserSermon.saved_at, SermonAnalysis.summary)
+            query = self._db.query(Sermon, UserSermon.saved_at, SermonAnalysis.summary).options(
+                selectinload(Sermon.themes)
+            )
 
         query = (
             query.join(UserSermon, UserSermon.sermon_id == Sermon.id)

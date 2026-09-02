@@ -222,3 +222,4 @@ __marimo__/
 
 .dokugen-backup.md
 .dokugen-cache.json
+*.txt

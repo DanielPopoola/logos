@@ -24,6 +24,13 @@ class SermonNotFoundError(Exception):
     "exists but isn't yours"."""
 
 
+class SermonNotRetryableError(Exception):
+    """Raised when retry is requested for a sermon that isn't in a failed
+    state. Retrying a pending/processing/completed sermon isn't meaningful -
+    there's nothing to recover, and re-enqueueing would race the existing
+    run or reprocess a sermon that already succeeded."""
+
+
 @dataclass
 class SubmitSermonResult:
     sermon: Sermon
@@ -103,6 +110,18 @@ class SermonService:
             job.attempt_count = 0
             job.error_message = None
 
+    def _requeue_failed_sermon(self, sermon: Sermon) -> None:
+        """Give a failed sermon a fresh attempt window and re-enqueue it.
+        Shared by submit_sermon's failed-branch (retry via resubmission) and
+        retry_ingestion (direct retry action) - both mean the same thing:
+        "try this sermon again from scratch."
+        """
+        sermon.status = ProcessingStatus.PENDING
+        sermon.failure_reason = None
+        self._reset_processing_job(sermon)
+        self._db.commit()
+        process_sermon.delay(str(sermon.id))
+
     def submit_sermon(self, user: User, youtube_url: str) -> SubmitSermonResult:
         """Submit a YouTube sermon URL into the user's library.
 
@@ -135,12 +154,8 @@ class SermonService:
             return SubmitSermonResult(sermon=sermon, status_code=200)
 
         if sermon.status == ProcessingStatus.FAILED:
-            sermon.status = ProcessingStatus.PENDING
-            sermon.failure_reason = None
-            self._reset_processing_job(sermon)
             self._sermons.add_to_library(user.id, sermon.id)
-            self._db.commit()
-            process_sermon.delay(str(sermon.id))
+            self._requeue_failed_sermon(sermon)
             return SubmitSermonResult(sermon=sermon, status_code=202)
 
         # pending or processing elsewhere, not yet in this user's library
@@ -201,7 +216,8 @@ class SermonService:
                 summary=analysis_row.summary,
                 key_teachings=analysis_row.key_teachings or [],  # ty: ignore[invalid-argument-type]
                 action_points=analysis_row.action_points or [],  # ty: ignore[invalid-argument-type]
-                reflection_questions=analysis_row.reflection_questions or [],  # ty: ignore[invalid-argument-type]
+                reflection_questions=analysis_row.reflection_questions
+                or [],  # ty: ignore[invalid-argument-type]
             )
             if analysis_row is not None
             else None
@@ -239,3 +255,25 @@ class SermonService:
         if deleted is None:
             raise SermonNotFoundError(f"Sermon {sermon_id} not found in this user's library")
         self._db.commit()
+
+    def retry_ingestion(self, user: User, sermon_id: uuid.UUID) -> Sermon:
+        """Manually retry a failed sermon's ingestion.
+
+        Ownership-scoped like every other sermon action - a user can only
+        retry a sermon that's in their own library, and a sermon that
+        doesn't exist or belongs to someone else's library raises the same
+        SermonNotFoundError either way (no existence leak).
+
+        Only meaningful for a sermon currently in FAILED status; retrying a
+        pending/processing/completed sermon raises SermonNotRetryableError
+        instead of silently no-op'ing or re-enqueueing redundant work.
+        """
+        sermon, _saved_at = self._get_owned_sermon(user, sermon_id)
+
+        if sermon.status != ProcessingStatus.FAILED:
+            raise SermonNotRetryableError(
+                f"Sermon {sermon_id} is not in a failed state (status={sermon.status})"
+            )
+
+        self._requeue_failed_sermon(sermon)
+        return sermon

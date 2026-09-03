@@ -17,7 +17,11 @@ from app.schemas.sermon import (
     SubmitSermonRequest,
 )
 from app.services.note_service import NoteNotFoundError, NoteService
-from app.services.sermon_service import SermonNotFoundError, SermonService
+from app.services.sermon_service import (
+    SermonNotFoundError,
+    SermonNotRetryableError,
+    SermonService,
+)
 
 router = APIRouter()
 
@@ -79,6 +83,22 @@ def delete_sermon(
         sermon_service.delete_from_library(user, sermon_id)
     except SermonNotFoundError as e:
         raise AppException(status_code=404, code="sermon_not_found", message=str(e)) from e
+
+
+@router.post("/{sermon_id}/retry", response_model=APIResponse[SermonSubmissionOut])
+def retry_sermon(
+    sermon_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    sermon_service: Annotated[SermonService, Depends(get_sermon_service)],
+):
+    try:
+        sermon = sermon_service.retry_ingestion(user, sermon_id)
+    except SermonNotFoundError as e:
+        raise AppException(status_code=404, code="sermon_not_found", message=str(e)) from e
+    except SermonNotRetryableError as e:
+        raise AppException(status_code=409, code="sermon_not_retryable", message=str(e)) from e
+
+    return APIResponse.ok(SermonSubmissionOut.model_validate(sermon, from_attributes=True))
 
 
 @router.post(

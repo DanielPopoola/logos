@@ -185,3 +185,80 @@ def test_delete_sermon_removes_it_from_library(client, db_session):
     assert db_session.query(UserSermon).filter_by(user_id=user.id, sermon_id=sermon.id).count() == 0
     # canonical Sermon row survives
     assert db_session.query(Sermon).filter_by(id=sermon.id).count() == 1
+
+
+def test_retry_sermon_without_session_returns_401(client):
+    import uuid
+
+    response = client.post(f"/v1/sermons/{uuid.uuid4()}/retry")
+
+    assert response.status_code == 401
+
+
+def test_retry_sermon_not_in_library_returns_404(client, db_session):
+    _authed_client(client, db_session)
+    import uuid
+
+    response = client.post(f"/v1/sermons/{uuid.uuid4()}/retry")
+
+    body = response.json()
+    assert response.status_code == 404
+    assert body["error"]["code"] == "sermon_not_found"
+
+
+def test_retry_non_failed_sermon_returns_409(client, db_session):
+    from app.models.sermon import ProcessingStatus, Sermon
+    from app.models.user_sermon import UserSermon
+
+    user = _authed_client(client, db_session)
+    sermon = Sermon(
+        youtube_video_id="HTTP4",
+        youtube_url="https://youtu.be/HTTP4",
+        status=ProcessingStatus.COMPLETED,
+    )
+    db_session.add(sermon)
+    db_session.flush()
+    db_session.add(UserSermon(user_id=user.id, sermon_id=sermon.id))
+    db_session.commit()
+
+    response = client.post(f"/v1/sermons/{sermon.id}/retry")
+
+    body = response.json()
+    assert response.status_code == 409
+    assert body["error"]["code"] == "sermon_not_retryable"
+
+
+def test_retry_failed_sermon_resets_to_pending_and_reenqueues(client, db_session):
+    from app.models.processing_job import ProcessingJob
+    from app.models.sermon import ProcessingStatus, Sermon
+    from app.models.user_sermon import UserSermon
+
+    user = _authed_client(client, db_session)
+    sermon = Sermon(
+        youtube_video_id="HTTP5",
+        youtube_url="https://youtu.be/HTTP5",
+        status=ProcessingStatus.FAILED,
+        failure_reason="No captions available",
+    )
+    db_session.add(sermon)
+    db_session.flush()
+    db_session.add(
+        ProcessingJob(sermon_id=sermon.id, attempt_count=3, error_message="No captions available")
+    )
+    db_session.add(UserSermon(user_id=user.id, sermon_id=sermon.id))
+    db_session.commit()
+
+    with patch("app.services.sermon_service.process_sermon") as mock_task:
+        response = client.post(f"/v1/sermons/{sermon.id}/retry")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["data"]["status"] == "pending"
+    mock_task.delay.assert_called_once_with(str(sermon.id))
+
+    db_session.refresh(sermon)
+    assert sermon.status == ProcessingStatus.PENDING
+    assert sermon.failure_reason is None
+    job = db_session.query(ProcessingJob).filter_by(sermon_id=sermon.id).one()
+    assert job.attempt_count == 0
+    assert job.error_message is None

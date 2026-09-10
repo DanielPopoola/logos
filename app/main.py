@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
@@ -42,6 +43,14 @@ app.add_middleware(RequestIDMiddleware)
 # for why a raw ASGI middleware is used here instead of
 # add_exception_handler(Exception, ...).
 app.add_middleware(UnhandledExceptionMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.add_exception_handler(AppException, app_exception_handler)  # ty: ignore[invalid-argument-type]
 app.include_router(health.router)
 app.include_router(auth.router, prefix="/v1/auth", tags=["auth"])

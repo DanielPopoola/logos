@@ -55,6 +55,8 @@ def google_callback(
         value=session.token,
         httponly=True,
         max_age=SESSION_TTL_DAYS * 24 * 60 * 60,
+        samesite="none",
+        secure=True,
     )
     return redirect
 
@@ -67,7 +69,7 @@ def logout(
 ):
     if session_token is not None:
         auth_service.logout(session_token)
-    response.delete_cookie("session_token")
+    response.delete_cookie("session_token", samesite="none", secure=True)
 
 
 @router.get("/me", response_model=APIResponse[UserOut])

@@ -47,7 +47,9 @@ def google_callback(
     user = auth_service.get_or_create_user(userinfo)
     session = auth_service.create_session(user)
 
-    redirect = RedirectResponse(url="/", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect = RedirectResponse(
+        url=f"{settings.frontend_url}/library", status_code=status.HTTP_307_TEMPORARY_REDIRECT
+    )
     redirect.set_cookie(
         key="session_token",
         value=session.token,

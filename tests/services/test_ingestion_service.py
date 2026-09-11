@@ -20,6 +20,11 @@ MOCK_ANALYSIS = SermonAnalysisResult(
     reflection_questions=["What did you learn?"],
 )
 MOCK_EMBEDDINGS = [[0.1] * 768]
+MOCK_METADATA = {
+    "title": "Walking by Faith",
+    "channel_title": "Grace City Church",
+    "duration_seconds": 2880,
+}
 
 
 def _service(db_session) -> IngestionService:
@@ -39,6 +44,7 @@ def test_run_produces_correct_rows_on_success(db_session):
 
     with (
         patch("app.services.ingestion_service.get_transcript", return_value=MOCK_SNIPPETS),
+        patch("app.services.ingestion_service.fetch_video_metadata", return_value=MOCK_METADATA),
         patch("app.services.ingestion_service.chunk_transcript", return_value=MOCK_CHUNKS),
         patch("app.services.ingestion_service.analyze_transcript", return_value=MOCK_ANALYSIS),
         patch("app.services.ingestion_service.embed_chunks", return_value=MOCK_EMBEDDINGS),
@@ -75,6 +81,7 @@ def test_run_is_idempotent_on_retry(db_session):
 
     with (
         patch("app.services.ingestion_service.get_transcript", return_value=MOCK_SNIPPETS),
+        patch("app.services.ingestion_service.fetch_video_metadata", return_value=MOCK_METADATA),
         patch("app.services.ingestion_service.chunk_transcript", return_value=MOCK_CHUNKS),
         patch("app.services.ingestion_service.analyze_transcript", return_value=MOCK_ANALYSIS),
         patch("app.services.ingestion_service.embed_chunks", return_value=MOCK_EMBEDDINGS),
@@ -87,13 +94,61 @@ def test_run_is_idempotent_on_retry(db_session):
     assert theme_count == 1
 
 
+def test_run_populates_title_speaker_duration_from_metadata(db_session):
+    service = _service(db_session)
+    sermon = _pending_sermon(db_session)
+
+    with (
+        patch("app.services.ingestion_service.fetch_video_metadata", return_value=MOCK_METADATA),
+        patch("app.services.ingestion_service.get_transcript", return_value=MOCK_SNIPPETS),
+        patch("app.services.ingestion_service.chunk_transcript", return_value=MOCK_CHUNKS),
+        patch("app.services.ingestion_service.analyze_transcript", return_value=MOCK_ANALYSIS),
+        patch("app.services.ingestion_service.embed_chunks", return_value=MOCK_EMBEDDINGS),
+    ):
+        service.run(str(sermon.id))
+
+    db_session.refresh(sermon)
+    assert sermon.title == "Walking by Faith"
+    assert sermon.speaker == "Grace City Church"
+    assert sermon.duration_seconds == 2880
+
+
+def test_run_completes_even_if_metadata_fetch_fails(db_session):
+    """Metadata is best-effort: a title/speaker/duration lookup failure
+    (quota exceeded, transient API error, unresolvable video ID) must not
+    fail the whole sermon when the transcript and analysis - the actual
+    product value - succeed."""
+    service = _service(db_session)
+    sermon = _pending_sermon(db_session)
+
+    with (
+        patch(
+            "app.services.ingestion_service.fetch_video_metadata",
+            side_effect=Exception("YouTube Data API quota exceeded"),
+        ),
+        patch("app.services.ingestion_service.get_transcript", return_value=MOCK_SNIPPETS),
+        patch("app.services.ingestion_service.chunk_transcript", return_value=MOCK_CHUNKS),
+        patch("app.services.ingestion_service.analyze_transcript", return_value=MOCK_ANALYSIS),
+        patch("app.services.ingestion_service.embed_chunks", return_value=MOCK_EMBEDDINGS),
+    ):
+        service.run(str(sermon.id))
+
+    db_session.refresh(sermon)
+    assert sermon.status == "completed"
+    assert sermon.title is None
+    assert sermon.speaker is None
+
+
 def test_run_marks_failed_with_reason_on_transcript_failure(db_session):
     service = _service(db_session)
     sermon = _pending_sermon(db_session)
 
-    with patch(
-        "app.services.ingestion_service.get_transcript",
-        side_effect=Exception("No captions available"),
+    with (
+        patch("app.services.ingestion_service.fetch_video_metadata", return_value=MOCK_METADATA),
+        patch(
+            "app.services.ingestion_service.get_transcript",
+            side_effect=Exception("No captions available"),
+        ),
     ):
         service.run(str(sermon.id))
 
@@ -109,9 +164,12 @@ def test_run_stops_retrying_beyond_max_attempts(db_session):
     service = _service(db_session)
     sermon = _pending_sermon(db_session)
 
-    with patch(
-        "app.services.ingestion_service.get_transcript",
-        side_effect=Exception("No captions available"),
+    with (
+        patch("app.services.ingestion_service.fetch_video_metadata", return_value=MOCK_METADATA),
+        patch(
+            "app.services.ingestion_service.get_transcript",
+            side_effect=Exception("No captions available"),
+        ),
     ):
         for _ in range(5):  # exceeds MAX_ATTEMPTS
             service.run(str(sermon.id))
@@ -137,6 +195,7 @@ def test_run_skips_unparseable_bible_reference_but_completes(db_session):
 
     with (
         patch("app.services.ingestion_service.get_transcript", return_value=MOCK_SNIPPETS),
+        patch("app.services.ingestion_service.fetch_video_metadata", return_value=MOCK_METADATA),
         patch("app.services.ingestion_service.chunk_transcript", return_value=MOCK_CHUNKS),
         patch(
             "app.services.ingestion_service.analyze_transcript",

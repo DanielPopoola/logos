@@ -7,7 +7,8 @@ from app.ingestion.analysis import analyze_transcript
 from app.ingestion.bible_reference import BibleReferenceParseError
 from app.ingestion.chunking import chunk_transcript
 from app.ingestion.embeddings import embed_chunks
-from app.ingestion.youtube import get_transcript
+from app.ingestion.youtube import extract_video_id, get_transcript
+from app.ingestion.youtube_metadata import VideoMetadataNotFoundError, fetch_video_metadata
 from app.models.processing_job import ProcessingJob
 from app.models.sermon import ProcessingStatus, Sermon
 from app.models.sermon_analysis import SermonAnalysis
@@ -19,6 +20,26 @@ logger = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
 
 
+def _fetch_and_apply_metadata(sermon: Sermon) -> None:
+    """Best-effort: populates title/speaker/duration from the YouTube Data
+    API. Deliberately does not raise - a metadata hiccup (quota, transient
+    API error, or a video ID it can't resolve) shouldn't fail the whole
+    sermon when the transcript and analysis - the actual product value -
+    succeeded. Leaves the fields as whatever they already were (typically
+    None) on failure, and the caller sees this as a warning, not an error.
+    """
+    try:
+        video_id = extract_video_id(sermon.youtube_url)
+        metadata = fetch_video_metadata(video_id)
+    except (VideoMetadataNotFoundError, Exception) as e:  # noqa: BLE001
+        logger.warning("Could not fetch video metadata for sermon %s: %s", sermon.id, e)
+        return
+
+    sermon.title = metadata["title"]
+    sermon.speaker = metadata["channel_title"]
+    sermon.duration_seconds = metadata["duration_seconds"]
+
+
 def _run_pipeline(sermon: Sermon) -> tuple[list[dict], object, list[list[float]]]:
     """Fetch, chunk, analyze, and embed. Raises on transcript failure.
 
@@ -26,6 +47,8 @@ def _run_pipeline(sermon: Sermon) -> tuple[list[dict], object, list[list[float]]
     embeddings) - no decisions made here, so this stays a plain function
     rather than living on IngestionService.
     """
+    _fetch_and_apply_metadata(sermon)
+
     snippets = get_transcript(sermon.youtube_url)
     sermon.transcript = " ".join(s["text"] for s in snippets)
 

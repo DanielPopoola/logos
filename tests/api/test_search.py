@@ -56,7 +56,8 @@ def test_search_returns_matching_results(client, db_session):
     assert response.status_code == 200
     assert body["success"] is True
     assert body["data"]["results"][0]["sermon_id"] == str(sermon.id)
-    assert body["data"]["results"][0]["matched_excerpt"] == "on trusting God in hardship"
+    assert body["data"]["results"][0]["sermon_title"] == "Faith Under Fire"
+    assert body["data"]["results"][0]["duration_seconds"] == sermon.duration_seconds
 
 
 def test_search_without_session_returns_401(client):

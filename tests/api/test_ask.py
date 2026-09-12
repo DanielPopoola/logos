@@ -63,7 +63,7 @@ def test_ask_returns_answer_with_sources(client, db_session):
     assert response.status_code == 200
     assert body["data"]["answer"] == "Trust God through hardship."
     assert body["data"]["sources"][0]["sermon_id"] == str(sermon.id)
-    assert body["data"]["sources"][0]["matched_excerpt"] == "on trusting God in hardship"
+    assert body["data"]["sources"][0]["sermon_title"] == "Faith Under Fire"
 
 
 def test_ask_without_session_returns_401(client):

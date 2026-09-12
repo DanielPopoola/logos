@@ -7,8 +7,7 @@ class SearchResultOut(BaseModel):
     sermon_id: uuid.UUID
     sermon_title: str | None
     speaker: str | None
-    matched_excerpt: str
-    timestamp_seconds: int | None
+    duration_seconds: int | None
     relevance_score: float
 
 
@@ -24,8 +23,7 @@ class AskRequest(BaseModel):
 class SourceOut(BaseModel):
     sermon_id: uuid.UUID
     sermon_title: str | None
-    matched_excerpt: str
-    timestamp_seconds: int | None
+    duration_seconds: int | None
 
 
 class AskResponseOut(BaseModel):

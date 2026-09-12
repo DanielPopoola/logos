@@ -39,8 +39,7 @@ class SearchResult:
     sermon_id: uuid.UUID
     sermon_title: str | None
     speaker: str | None
-    matched_excerpt: str
-    timestamp_seconds: int | None
+    duration_seconds: int | None
     relevance_score: float
 
 
@@ -89,40 +88,93 @@ class SearchService:
         truncate_at = MATCHED_EXCERPT_MAX_CHARS - len(ellipsis)
         return text[:truncate_at].rstrip() + ellipsis
 
-    def _find_results(self, user: User, query: str, limit: int) -> list[SearchResult]:
-        query_vector = embed_batch([query])[0]
-        rows = self._search_repo.find_similar_chunks(user.id, query_vector, limit)
-
+    def _find_results_by_title_or_theme(self, user: User, query: str, limit: int) -> list[SearchResult]:
+        """Cheap tier: exact/substring match against title or theme name,
+        no embedding call. relevance_score is 1.0 for every hit here -
+        there's no distance to compare, and a title/theme match is a more
+        certain signal than any embedding similarity score could be.
+        """
+        sermons = self._search_repo.find_by_title_or_theme(user.id, query, limit)
         return [
             SearchResult(
                 sermon_id=sermon.id,
                 sermon_title=sermon.title,
                 speaker=sermon.speaker,
-                matched_excerpt=self._truncate_excerpt(chunk.text),
-                timestamp_seconds=chunk.start_timestamp,
-                relevance_score=1 - distance,
+                duration_seconds=sermon.duration_seconds,
+                relevance_score=1.0,
             )
-            for chunk, sermon, distance in rows
+            for sermon in sermons
         ]
 
-    def semantic_search(self, user: User, query: str, limit: int) -> SearchResponse:
-        """Search the user's sermon library by meaning, not exact keywords.
+    def _find_results(self, user: User, query: str, limit: int) -> tuple[list[SearchResult], list[str]]:
+        """Retrieval still happens at the chunk level (embeddings are the
+        only way to find *which* sermons are relevant), but the returned
+        SearchResult list is collapsed to one row per sermon - a sermon
+        discussing the same topic across 3 matching chunks should appear
+        once, not three times, now that individual excerpts/timestamps
+        aren't shown to the user. Keeps each sermon's best (closest) match;
+        ranking across sermons is preserved by relevance_score, since rows
+        arrive from the repository already ordered by distance.
 
-        Scoped strictly to the current user's library - a chunk belonging
-        to a sermon the user hasn't imported is never returned, even if
-        it's the closest vector match. If the user has no sermons in their
-        library yet, returns an empty result set with an explanatory
-        message, without making an embedding call - there's nothing to
-        search.
+        Also returns the raw excerpt text for each kept chunk (not
+        deduped/truncated the same way) - answer_question still needs real
+        transcript text to ground the LLM's answer, even though that text
+        is no longer part of what's shown to the user in `sources`.
+        """
+        query_vector = embed_batch([query])[0]
+        # Over-fetch chunks before deduping, since multiple close chunks
+        # can belong to the same sermon - without this, a single sermon
+        # with several strong matches could crowd out `limit` distinct
+        # sermons even though the caller asked for `limit` results.
+        rows = self._search_repo.find_similar_chunks(user.id, query_vector, limit * 4)
+
+        results: list[SearchResult] = []
+        excerpts: list[str] = []
+        seen_sermon_ids: set[uuid.UUID] = set()
+        for chunk, sermon, distance in rows:
+            if sermon.id in seen_sermon_ids:
+                continue
+            seen_sermon_ids.add(sermon.id)
+            results.append(
+                SearchResult(
+                    sermon_id=sermon.id,
+                    sermon_title=sermon.title,
+                    speaker=sermon.speaker,
+                    duration_seconds=sermon.duration_seconds,
+                    relevance_score=1 - distance,
+                )
+            )
+            excerpts.append(f'From "{sermon.title}": {self._truncate_excerpt(chunk.text)}')
+            if len(results) == limit:
+                break
+
+        return results, excerpts
+
+    def semantic_search(self, user: User, query: str, limit: int) -> SearchResponse:
+        """Search the user's sermon library, cheapest signal first.
+
+        Three tiers, in order, stopping at the first one that finds
+        anything:
+        1. Title/theme substring match - cheap, exact, no embedding call.
+        2. Embedding similarity over transcript chunks - only reached if
+           tier 1 finds zero matches. This is deliberately NOT a top-up:
+           if title/theme find *any* results, embeddings are skipped
+           entirely for this search, even if fewer than `limit` were
+           found - trusting an exact signal over guessing further.
+
+        Scoped strictly to the current user's library at every tier. If
+        the user has no sermons in their library yet, returns an empty
+        result set with an explanatory message before trying either tier.
         """
         if self._has_empty_library(user):
             return SearchResponse(results=[], message=EMPTY_LIBRARY_MESSAGE)
 
-        return SearchResponse(results=self._find_results(user, query, limit))
+        title_or_theme_results = self._find_results_by_title_or_theme(user, query, limit)
+        if title_or_theme_results:
+            return SearchResponse(results=title_or_theme_results)
 
-    @staticmethod
-    def _build_excerpts_block(results: list[SearchResult]) -> str:
-        return "\n\n".join(f'From "{r.sermon_title}": {r.matched_excerpt}' for r in results)
+        results, _excerpts = self._find_results(user, query, limit)
+        return SearchResponse(results=results)
 
     def answer_question(self, user: User, question: str) -> AskResult:
         """Answer a question grounded in the user's sermon library, citing
@@ -137,8 +189,8 @@ class SearchService:
         if self._has_empty_library(user):
             return AskResult(answer=EMPTY_LIBRARY_ANSWER, sources=[])
 
-        results = self._find_results(user, question, RAG_CONTEXT_CHUNK_LIMIT)
-        prompt = ASK_PROMPT.format(question=question, excerpts=self._build_excerpts_block(results))
+        results, excerpts = self._find_results(user, question, RAG_CONTEXT_CHUNK_LIMIT)
+        prompt = ASK_PROMPT.format(question=question, excerpts="\n\n".join(excerpts))
         parsed = generate_structured(prompt=prompt, response_schema=AnswerResult)
         if parsed is None:
             raise AnswerParseError("LLM did not return a parseable structured answer")

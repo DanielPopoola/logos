@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     sentry_dsn: str | None = None
+    session_token_hash_secret: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

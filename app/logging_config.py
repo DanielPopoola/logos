@@ -1,11 +1,28 @@
 import json
 import logging
+import re
 from datetime import UTC, datetime
 
 from app.config import settings
 from app.request_context import get_request_id
 
 _RESERVED_RECORD_ATTRS = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys())
+_SENSITIVE_KEY_PATTERN = re.compile(
+    r"(?i)(api[_-]?key|(?:^|[?&])key|access[_-]?token|authorization|client[_-]?secret|session[_-]?token)([=:\s]+)[^\s,;]+"
+)
+
+
+def _redact(value: object) -> object:
+    if isinstance(value, str):
+        return _SENSITIVE_KEY_PATTERN.sub(r"\1\2[REDACTED]", value)
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if _SENSITIVE_KEY_PATTERN.search(str(key)) else _redact(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
 
 
 class JSONFormatter(logging.Formatter):
@@ -20,19 +37,19 @@ class JSONFormatter(logging.Formatter):
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": _redact(record.getMessage()),
             "request_id": get_request_id(),
         }
 
         if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
+            payload["exception"] = _redact(self.formatException(record.exc_info))
 
         # Anything passed via logger.info(..., extra={...}) rides along too,
         # so callers can attach structured context (e.g. sermon_id) without
         # this formatter needing to know about every possible field.
         for key, value in record.__dict__.items():
             if key not in _RESERVED_RECORD_ATTRS and key not in payload:
-                payload[key] = value
+                payload[key] = _redact(value)
 
         return json.dumps(payload, default=str)
 

@@ -12,11 +12,11 @@ class SessionRepository:
     def __init__(self, db: DBSession):
         self._db = db
 
-    def find_by_token(self, token: str) -> SessionModel | None:
-        return self._db.query(SessionModel).filter_by(token=token).first()
+    def find_by_token(self, token_hash: str) -> SessionModel | None:
+        return self._db.query(SessionModel).filter_by(token=token_hash).first()
 
     def add(self, session: SessionModel) -> None:
         self._db.add(session)
 
-    def delete_by_token(self, token: str) -> None:
-        self._db.query(SessionModel).filter_by(token=token).delete()
+    def delete_by_token(self, token_hash: str) -> None:
+        self._db.query(SessionModel).filter_by(token=token_hash).delete()

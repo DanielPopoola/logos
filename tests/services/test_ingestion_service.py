@@ -154,7 +154,7 @@ def test_run_marks_failed_with_reason_on_transcript_failure(db_session):
 
     db_session.refresh(sermon)
     assert sermon.status == "failed"
-    assert "No captions available" in sermon.failure_reason
+    assert sermon.failure_reason == "Processing failed; please retry."
 
     job = db_session.query(ProcessingJob).filter_by(sermon_id=sermon.id).one()
     assert job.attempt_count == 1

@@ -129,14 +129,12 @@ class IngestionService:
         job.attempt_count += 1
         job.error_message = str(error)
         sermon.status = ProcessingStatus.FAILED
-        sermon.failure_reason = str(error)
+        sermon.failure_reason = "Processing failed; please retry."
         self._db.commit()
 
         logger.error(
-            "Ingestion failed for sermon %s (attempt %d): %s",
-            sermon.id,
-            job.attempt_count,
-            error,
+            "Ingestion failed",
+            extra={"sermon_id": str(sermon.id), "attempt": job.attempt_count},
             exc_info=error,
         )
         capture_exception(error)

@@ -1,4 +1,8 @@
+import hashlib
+import hmac
 import logging
+import secrets
+import time
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -18,6 +22,36 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+OAUTH_STATE_COOKIE = "oauth_state"
+OAUTH_STATE_TTL_SECONDS = 600
+
+
+def _oauth_state_value() -> str:
+    nonce = secrets.token_urlsafe(32)
+    issued_at = str(int(time.time()))
+    value = f"{issued_at}.{nonce}"
+    signature = hmac.new(
+        settings.google_client_secret.encode(), value.encode(), hashlib.sha256
+    ).hexdigest()
+    return f"{value}.{signature}"
+
+
+def _valid_oauth_state(state: str | None, cookie_state: str | None) -> bool:
+    if not state or not cookie_state or not hmac.compare_digest(state, cookie_state):
+        return False
+    parts = state.split(".")
+    if len(parts) != 3:
+        return False
+    issued_at, nonce, signature = parts
+    value = f"{issued_at}.{nonce}"
+    expected = hmac.new(
+        settings.google_client_secret.encode(), value.encode(), hashlib.sha256
+    ).hexdigest()
+    try:
+        age = time.time() - int(issued_at)
+    except ValueError:
+        return False
+    return 0 <= age <= OAUTH_STATE_TTL_SECONDS and hmac.compare_digest(signature, expected)
 
 
 @router.get("/google/login")
@@ -30,15 +64,37 @@ def google_login():
         "scope": "openid email profile",
         "access_type": "offline",
     }
+    state = _oauth_state_value()
+    params["state"] = state
     url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
-    return RedirectResponse(url=url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect = RedirectResponse(url=url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect.set_cookie(
+        OAUTH_STATE_COOKIE,
+        state,
+        max_age=OAUTH_STATE_TTL_SECONDS,
+        httponly=True,
+        secure=settings.environment not in ("test", "development"),
+        samesite="lax",
+        path="/v1/auth/google",
+    )
+    return redirect
 
 
 @router.get("/google/callback")
 def google_callback(
     code: str,
+    state: str,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    oauth_state: Annotated[str | None, Cookie(alias=OAUTH_STATE_COOKIE)] = None,
 ):
+    if not _valid_oauth_state(state, oauth_state):
+        logger.warning("Authentication callback rejected", extra={"auth_reason": "invalid_state"})
+        raise AppException(
+            status_code=401,
+            code="google_auth_failed",
+            message="Google authentication failed",
+        )
+
     try:
         tokens = exchange_code_for_tokens(code)
         userinfo = fetch_google_userinfo(tokens["access_token"])
@@ -67,9 +123,10 @@ def google_callback(
         value=session.token,
         httponly=True,
         max_age=SESSION_TTL_DAYS * 24 * 60 * 60,
-        samesite="none",
-        secure=True,
+        samesite="none" if settings.environment not in ("test", "development") else "lax",
+        secure=settings.environment not in ("test", "development"),
     )
+    redirect.delete_cookie(OAUTH_STATE_COOKIE, path="/v1/auth/google")
     return redirect
 
 
@@ -84,7 +141,11 @@ def logout(
         logger.info("Authentication logout completed", extra={"auth_event": "logout"})
     else:
         logger.info("Authentication logout requested without session")
-    response.delete_cookie("session_token", samesite="none", secure=True)
+    response.delete_cookie(
+        "session_token",
+        samesite="none" if settings.environment not in ("test", "development") else "lax",
+        secure=settings.environment not in ("test", "development"),
+    )
 
 
 @router.get("/me", response_model=APIResponse[UserOut])

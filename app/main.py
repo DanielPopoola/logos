@@ -14,6 +14,7 @@ from app.database import engine
 from app.errors import AppException, app_exception_handler
 from app.logging_config import configure_logging
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.security import CSRFMiddleware, RateLimitMiddleware
 from app.middleware.unhandled_exceptions import UnhandledExceptionMiddleware
 from app.models.user import User as UserModel
 from app.sentry_config import init_sentry
@@ -37,6 +38,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Logos", lifespan=lifespan)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(CSRFMiddleware)
+app.add_middleware(RateLimitMiddleware)
 # Added last so it's outermost (Starlette's add_middleware prepends) - this
 # guarantees request_id is already set by RequestIDMiddleware before any
 # exception reaches this last-resort catch. See UnhandledExceptionMiddleware

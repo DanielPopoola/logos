@@ -61,7 +61,11 @@ def test_create_session_persists_token_bound_to_user(db_session):
 
     session = service.create_session(user)
 
-    stored = db_session.query(SessionModel).filter_by(token=session.token).one()
+    stored = (
+        db_session.query(SessionModel)
+        .filter_by(token=AuthService._hash_session_token(session.token))
+        .one()
+    )
     assert stored.user_id == user.id
     assert stored.expires_at > datetime.now(UTC)
 
@@ -91,7 +95,7 @@ def test_get_authenticated_user_raises_expired_for_stale_session(db_session):
     user = service.get_or_create_user(GOOGLE_USERINFO)
     db_session.add(
         SessionModel(
-            token="stale-token",
+            token=AuthService._hash_session_token("stale-token"),
             user_id=user.id,
             expires_at=datetime.now(UTC) - timedelta(days=1),
         )

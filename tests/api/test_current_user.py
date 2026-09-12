@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.models.session import Session as SessionModel
 from app.models.user import User
+from app.services.auth_service import AuthService
 
 
 def _make_user_and_session(db_session, expires_delta=timedelta(days=1)):
@@ -10,7 +11,7 @@ def _make_user_and_session(db_session, expires_delta=timedelta(days=1)):
     db_session.commit()
 
     session = SessionModel(
-        token="valid-token",
+        token=AuthService._hash_session_token("valid-token"),
         user_id=user.id,
         expires_at=datetime.now(UTC) + expires_delta,
     )

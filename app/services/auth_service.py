@@ -1,9 +1,12 @@
+import hashlib
+import hmac
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session as DBSession
 
+from app.config import settings
 from app.models.session import Session as SessionModel
 from app.models.user import User
 from app.repositories.session_repository import SessionRepository
@@ -59,15 +62,25 @@ class AuthService:
 
     def create_session(self, user: User) -> SessionModel:
         """Issue a new opaque session token for the given user."""
+        raw_token = secrets.token_urlsafe(32)
         session = SessionModel(
-            token=secrets.token_urlsafe(32),
+            token=self._hash_session_token(raw_token),
             user_id=user.id,
             expires_at=datetime.now(UTC) + timedelta(days=SESSION_TTL_DAYS),
         )
         self._sessions.add(session)
         self._db.commit()
+        expires_at = session.expires_at
+        user_id = session.user_id
+        self._db.expunge(session)
+        session = SessionModel(token=raw_token, user_id=user_id, expires_at=expires_at)
         logger.info("Authentication session created", extra={"user_id": str(user.id)})
         return session
+
+    @staticmethod
+    def _hash_session_token(token: str) -> str:
+        secret = settings.session_token_hash_secret or settings.google_client_secret
+        return hmac.new(secret.encode(), token.encode(), hashlib.sha256).hexdigest()
 
     def get_authenticated_user(self, session_token: str) -> User:
         """Resolve a session token to its User.
@@ -77,7 +90,7 @@ class AuthService:
         Deliberately distinct exceptions - the caller (deps.py) maps each to
         its own 401 error code.
         """
-        session = self._sessions.find_by_token(session_token)
+        session = self._sessions.find_by_token(self._hash_session_token(session_token))
         if session is None:
             logger.warning("Authentication session rejected", extra={"auth_reason": "invalid"})
             raise InvalidSessionError("No session found for supplied session token")
@@ -102,5 +115,5 @@ class AuthService:
         """Delete the session for this token, if any. A no-op for an
         already-stale/nonexistent token - logout is idempotent.
         """
-        self._sessions.delete_by_token(session_token)
+        self._sessions.delete_by_token(self._hash_session_token(session_token))
         self._db.commit()

@@ -6,6 +6,7 @@ from app.models.sermon_chunk import SermonChunk
 from app.models.session import Session as SessionModel
 from app.models.user import User
 from app.models.user_sermon import UserSermon
+from app.services.auth_service import AuthService
 
 
 def _authed_client(client, db_session):
@@ -13,11 +14,15 @@ def _authed_client(client, db_session):
     db_session.add(user)
     db_session.commit()
     session = SessionModel(
-        token="valid-token", user_id=user.id, expires_at=datetime.now(UTC) + timedelta(days=1)
+        token=AuthService._hash_session_token("valid-token"),
+        user_id=user.id,
+        expires_at=datetime.now(UTC) + timedelta(days=1),
     )
     db_session.add(session)
     db_session.commit()
     client.cookies.set("session_token", "valid-token")
+    client.cookies.set("csrf_token", "test-csrf-token")
+    client.headers.update({"X-CSRF-Token": "test-csrf-token"})
     return user
 
 

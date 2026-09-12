@@ -43,15 +43,21 @@ class NoteService:
         note = UserNote(user_id=user.id, sermon_id=sermon_id, content=content)
         self._notes.add(note)
         self._db.commit()
+        logger.info(
+            "Note created",
+            extra={"note_id": str(note.id), "sermon_id": str(sermon_id), "user_id": str(user.id)},
+        )
         return note
 
     def update_note(self, user: User, note_id: uuid.UUID, content: str) -> UserNote:
         note = self._get_owned_note(user, note_id)
         note.content = content
         self._db.commit()
+        logger.info("Note updated", extra={"note_id": str(note.id), "user_id": str(user.id)})
         return note
 
     def delete_note(self, user: User, note_id: uuid.UUID) -> None:
         note = self._get_owned_note(user, note_id)
         self._notes.delete(note)
         self._db.commit()
+        logger.info("Note deleted", extra={"note_id": str(note.id), "user_id": str(user.id)})

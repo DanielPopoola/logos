@@ -1,10 +1,13 @@
+import logging
 import re
+import time
 
 import httpx
 
 from app.config import settings
 
 YOUTUBE_DATA_API_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
+logger = logging.getLogger(__name__)
 
 # Matches ISO 8601 durations as returned by contentDetails.duration, e.g.
 # "PT42M17S", "PT1H5M", "PT38M". Named groups default to None when absent.
@@ -44,26 +47,61 @@ def fetch_video_metadata(video_id: str) -> dict:
     configuration problems the caller should surface, not silently
     tolerate the way a missing title might be.
     """
-    response = httpx.get(
-        YOUTUBE_DATA_API_VIDEOS_URL,
-        params={
-            "part": "snippet,contentDetails",
-            "id": video_id,
-            "key": settings.youtube_data_api_key,
-        },
-    )
-    response.raise_for_status()
-    payload = response.json()
+    started_at = time.perf_counter()
+    try:
+        response = httpx.get(
+            YOUTUBE_DATA_API_VIDEOS_URL,
+            params={
+                "part": "snippet,contentDetails",
+                "id": video_id,
+                "key": settings.youtube_data_api_key,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        logger.warning(
+            "External API call failed",
+            exc_info=True,
+            extra={
+                "provider": "youtube",
+                "operation": "fetch_video_metadata",
+                "video_id": video_id,
+                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        )
+        raise
 
     items = payload.get("items", [])
     if not items:
+        logger.info(
+            "External API call completed without result",
+            extra={
+                "provider": "youtube",
+                "operation": "fetch_video_metadata",
+                "video_id": video_id,
+                "status_code": response.status_code,
+                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        )
         raise VideoMetadataNotFoundError(
             f"No video found for ID {video_id!r} (private, deleted, or invalid)"
         )
 
     video = items[0]
-    return {
+    result = {
         "title": video["snippet"]["title"],
         "channel_title": video["snippet"]["channelTitle"],
         "duration_seconds": _parse_iso8601_duration(video["contentDetails"]["duration"]),
     }
+    logger.info(
+        "External API call completed",
+        extra={
+            "provider": "youtube",
+            "operation": "fetch_video_metadata",
+            "video_id": video_id,
+            "status_code": response.status_code,
+            "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+        },
+    )
+    return result

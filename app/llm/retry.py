@@ -1,4 +1,5 @@
 import functools
+import logging
 import time
 
 from openai import (
@@ -19,6 +20,7 @@ NON_RETRYABLE_ERRORS = (
     NotFoundError,
     PermissionDeniedError,
 )
+logger = logging.getLogger(__name__)
 
 
 def _is_retryable(error: Exception) -> bool:
@@ -47,6 +49,14 @@ def retry_on_transient_error(max_attempts: int = 3, initial_delay_seconds: float
                     is_last_attempt = attempt == max_attempts
                     if not _is_retryable(error) or is_last_attempt:
                         raise
+                    logger.warning(
+                        "Retrying transient external API failure",
+                        extra={
+                            "operation": func.__name__,
+                            "attempt": attempt,
+                            "next_attempt": attempt + 1,
+                        },
+                    )
                     time.sleep(delay)
                     delay *= 2
 

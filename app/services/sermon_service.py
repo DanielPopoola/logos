@@ -143,22 +143,42 @@ class SermonService:
             self._sermons.add_to_library(user.id, sermon.id)
             self._db.commit()
             process_sermon.delay(str(sermon.id))
+            logger.info(
+                "Sermon ingestion submitted",
+                extra={"sermon_id": str(sermon.id), "user_id": str(user.id), "status_code": 201},
+            )
             return SubmitSermonResult(sermon=sermon, status_code=201)
 
         if self._sermons.is_in_library(user.id, sermon.id):
+            logger.info(
+                "Sermon submission deduplicated",
+                extra={"sermon_id": str(sermon.id), "user_id": str(user.id), "status_code": 200},
+            )
             return SubmitSermonResult(sermon=sermon, status_code=200)
 
         if sermon.status == ProcessingStatus.COMPLETED:
             self._sermons.add_to_library(user.id, sermon.id)
             self._db.commit()
+            logger.info(
+                "Completed sermon added to library",
+                extra={"sermon_id": str(sermon.id), "user_id": str(user.id)},
+            )
             return SubmitSermonResult(sermon=sermon, status_code=200)
 
         if sermon.status == ProcessingStatus.FAILED:
             self._sermons.add_to_library(user.id, sermon.id)
             self._requeue_failed_sermon(sermon)
+            logger.info(
+                "Failed sermon requeued",
+                extra={"sermon_id": str(sermon.id), "user_id": str(user.id)},
+            )
             return SubmitSermonResult(sermon=sermon, status_code=202)
 
         # pending or processing elsewhere, not yet in this user's library
+        logger.info(
+            "Sermon submission conflicts with active ingestion",
+            extra={"sermon_id": str(sermon.id), "user_id": str(user.id), "status_code": 409},
+        )
         return SubmitSermonResult(sermon=sermon, status_code=409)
 
     @staticmethod
@@ -254,6 +274,10 @@ class SermonService:
         if deleted is None:
             raise SermonNotFoundError(f"Sermon {sermon_id} not found in this user's library")
         self._db.commit()
+        logger.info(
+            "Sermon removed from library",
+            extra={"sermon_id": str(sermon_id), "user_id": str(user.id)},
+        )
 
     def retry_ingestion(self, user: User, sermon_id: uuid.UUID) -> Sermon:
         """Manually retry a failed sermon's ingestion.

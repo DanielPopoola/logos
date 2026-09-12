@@ -46,6 +46,10 @@ def configure_logging() -> None:
     root.setLevel(settings.log_level)
 
     root.handlers.clear()
+    # The transport clients include query strings and authorization headers in
+    # their request logs. Application clients emit sanitized events instead.
+    for logger_name in ("httpx", "httpcore", "httpx2"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
     handler = logging.StreamHandler()
     handler.setFormatter(JSONFormatter())
     root.addHandler(handler)

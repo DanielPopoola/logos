@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -14,12 +15,14 @@ from app.schemas.response import APIResponse
 from app.services.auth_service import SESSION_TTL_DAYS, AuthService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 
 
 @router.get("/google/login")
 def google_login():
+    logger.info("Authentication login initiated", extra={"auth_provider": "google"})
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": settings.google_redirect_uri,
@@ -40,12 +43,21 @@ def google_callback(
         tokens = exchange_code_for_tokens(code)
         userinfo = fetch_google_userinfo(tokens["access_token"])
     except Exception as e:
+        logger.warning(
+            "Authentication callback failed",
+            exc_info=e,
+            extra={"auth_provider": "google", "auth_event": "login_failure"},
+        )
         raise AppException(
             status_code=401, code="google_auth_failed", message="Google authentication failed"
         ) from e
 
     user = auth_service.get_or_create_user(userinfo)
     session = auth_service.create_session(user)
+    logger.info(
+        "Authentication succeeded",
+        extra={"auth_provider": "google", "auth_event": "login_success", "user_id": str(user.id)},
+    )
 
     redirect = RedirectResponse(
         url=f"{settings.frontend_url}/library", status_code=status.HTTP_307_TEMPORARY_REDIRECT
@@ -69,6 +81,9 @@ def logout(
 ):
     if session_token is not None:
         auth_service.logout(session_token)
+        logger.info("Authentication logout completed", extra={"auth_event": "logout"})
+    else:
+        logger.info("Authentication logout requested without session")
     response.delete_cookie("session_token", samesite="none", secure=True)
 
 

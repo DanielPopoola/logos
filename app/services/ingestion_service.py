@@ -1,4 +1,5 @@
 import logging
+import time
 
 from sentry_sdk import capture_exception
 from sqlalchemy.orm import Session as DBSession
@@ -150,8 +151,21 @@ class IngestionService:
         job = self._repo.get_or_create_job(sermon.id)
 
         if job.attempt_count >= MAX_ATTEMPTS:
+            logger.warning(
+                "Ingestion skipped because retry limit was reached",
+                extra={
+                    "sermon_id": str(sermon.id),
+                    "attempt": job.attempt_count,
+                    "max_attempts": MAX_ATTEMPTS,
+                },
+            )
             return
 
+        started_at = time.perf_counter()
+        logger.info(
+            "Ingestion started",
+            extra={"sermon_id": str(sermon.id), "attempt": job.attempt_count + 1},
+        )
         sermon.status = ProcessingStatus.PROCESSING
         self._db.commit()
 
@@ -159,9 +173,26 @@ class IngestionService:
             chunks, analysis_result, embeddings = _run_pipeline(sermon)
         except Exception as e:
             self._mark_failed(sermon, job, e)
+            logger.error(
+                "Ingestion completed with failure",
+                extra={
+                    "sermon_id": str(sermon.id),
+                    "attempt": job.attempt_count,
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                },
+            )
             return
 
         self._persist_results(sermon, chunks, analysis_result, embeddings)
 
         sermon.status = ProcessingStatus.COMPLETED
         self._db.commit()
+        logger.info(
+            "Ingestion completed",
+            extra={
+                "sermon_id": str(sermon.id),
+                "attempt": job.attempt_count + 1,
+                "chunk_count": len(chunks),
+                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        )

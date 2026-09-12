@@ -13,5 +13,9 @@ def get_request_id() -> str:
     return _request_id_var.get() or str(uuid.uuid4())
 
 
-def set_request_id(value: str) -> None:
-    _request_id_var.set(value)
+def set_request_id(value: str):
+    return _request_id_var.set(value)
+
+
+def reset_request_id(token) -> None:
+    _request_id_var.reset(token)

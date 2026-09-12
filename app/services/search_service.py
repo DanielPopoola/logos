@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -166,15 +167,35 @@ class SearchService:
         the user has no sermons in their library yet, returns an empty
         result set with an explanatory message before trying either tier.
         """
+        started_at = time.perf_counter()
         if self._has_empty_library(user):
-            return SearchResponse(results=[], message=EMPTY_LIBRARY_MESSAGE)
+            response = SearchResponse(results=[], message=EMPTY_LIBRARY_MESSAGE)
+            logger.info(
+                "Semantic search completed",
+                extra={
+                    "user_id": str(user.id),
+                    "result_count": 0,
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                },
+            )
+            return response
 
         title_or_theme_results = self._find_results_by_title_or_theme(user, query, limit)
         if title_or_theme_results:
-            return SearchResponse(results=title_or_theme_results)
+            response = SearchResponse(results=title_or_theme_results)
+        else:
+            results, _excerpts = self._find_results(user, query, limit)
+            response = SearchResponse(results=results)
 
-        results, _excerpts = self._find_results(user, query, limit)
-        return SearchResponse(results=results)
+        logger.info(
+            "Semantic search completed",
+            extra={
+                "user_id": str(user.id),
+                "result_count": len(response.results),
+                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        )
+        return response
 
     def answer_question(self, user: User, question: str) -> AskResult:
         """Answer a question grounded in the user's sermon library, citing
@@ -186,8 +207,18 @@ class SearchService:
         call - there's nothing to search, so paying for either would be
         wasted.
         """
+        started_at = time.perf_counter()
         if self._has_empty_library(user):
-            return AskResult(answer=EMPTY_LIBRARY_ANSWER, sources=[])
+            result = AskResult(answer=EMPTY_LIBRARY_ANSWER, sources=[])
+            logger.info(
+                "Question answering completed without library content",
+                extra={
+                    "user_id": str(user.id),
+                    "source_count": 0,
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                },
+            )
+            return result
 
         results, excerpts = self._find_results(user, question, RAG_CONTEXT_CHUNK_LIMIT)
         prompt = ASK_PROMPT.format(question=question, excerpts="\n\n".join(excerpts))
@@ -195,4 +226,13 @@ class SearchService:
         if parsed is None:
             raise AnswerParseError("LLM did not return a parseable structured answer")
 
-        return AskResult(answer=parsed.answer, sources=results)
+        result = AskResult(answer=parsed.answer, sources=results)
+        logger.info(
+            "Question answering completed",
+            extra={
+                "user_id": str(user.id),
+                "source_count": len(results),
+                "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        )
+        return result

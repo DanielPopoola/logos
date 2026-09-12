@@ -42,6 +42,7 @@ class AuthService:
         """
         user = self._users.find_by_google_id(google_userinfo["sub"])
         if user is not None:
+            logger.info("Authenticated user found", extra={"user_id": str(user.id)})
             return user
 
         user = User(
@@ -53,6 +54,7 @@ class AuthService:
         self._users.add(user)
         self._db.commit()
         self._db.refresh(user)
+        logger.info("Authenticated user created", extra={"user_id": str(user.id)})
         return user
 
     def create_session(self, user: User) -> SessionModel:
@@ -64,6 +66,7 @@ class AuthService:
         )
         self._sessions.add(session)
         self._db.commit()
+        logger.info("Authentication session created", extra={"user_id": str(user.id)})
         return session
 
     def get_authenticated_user(self, session_token: str) -> User:
@@ -76,14 +79,23 @@ class AuthService:
         """
         session = self._sessions.find_by_token(session_token)
         if session is None:
-            raise InvalidSessionError(f"No session found for token {session_token}")
+            logger.warning("Authentication session rejected", extra={"auth_reason": "invalid"})
+            raise InvalidSessionError("No session found for supplied session token")
 
         if session.expires_at < datetime.now(UTC):
-            raise SessionExpiredError(f"Session {session_token} expired at {session.expires_at}")
+            logger.warning(
+                "Authentication session rejected",
+                extra={"auth_reason": "expired", "user_id": str(session.user_id)},
+            )
+            raise SessionExpiredError("Supplied session token has expired")
 
         user = self._users.find_by_id(session.user_id)  # ty: ignore[invalid-argument-type]
         if user is None:
-            raise InvalidSessionError(f"No user found for session {session_token}")
+            logger.warning(
+                "Authentication session rejected",
+                extra={"auth_reason": "user_not_found", "user_id": str(session.user_id)},
+            )
+            raise InvalidSessionError("No user found for supplied session token")
         return user
 
     def logout(self, session_token: str) -> None:

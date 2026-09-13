@@ -13,6 +13,7 @@ from app.api.deps import get_auth_service, get_current_user
 from app.auth.google_client import exchange_code_for_tokens, fetch_google_userinfo
 from app.config import settings
 from app.errors import AppException
+from app.middleware.security import CSRF_COOKIE_NAME
 from app.models.user import User
 from app.schemas.auth import UserOut
 from app.schemas.response import APIResponse
@@ -143,6 +144,12 @@ def logout(
         logger.info("Authentication logout requested without session")
     response.delete_cookie(
         "session_token",
+        samesite="none" if settings.environment not in ("test", "development") else "lax",
+        secure=settings.environment not in ("test", "development"),
+    )
+    response.delete_cookie(
+        CSRF_COOKIE_NAME,
+        path="/",
         samesite="none" if settings.environment not in ("test", "development") else "lax",
         secure=settings.environment not in ("test", "development"),
     )

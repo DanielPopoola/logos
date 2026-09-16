@@ -10,6 +10,7 @@ from app.models.taxonomy import BibleReference, Theme
 from app.models.user import User
 from app.models.user_note import UserNote
 from app.models.user_sermon import UserSermon
+from app.repositories.ingestion_repository import IngestionRepository
 from app.repositories.note_repository import NoteRepository
 from app.repositories.sermon_repository import SermonRepository
 from app.services.sermon_service import (
@@ -23,7 +24,12 @@ VIDEO_ID = "ABC123xyz45"
 
 
 def _sermon_service(db_session) -> SermonService:
-    return SermonService(db_session, SermonRepository(db_session), NoteRepository(db_session))
+    return SermonService(
+        db_session,
+        SermonRepository(db_session),
+        NoteRepository(db_session),
+        IngestionRepository(db_session),
+    )
 
 
 def _user(db_session, google_id="u1") -> User:

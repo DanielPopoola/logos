@@ -12,19 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class NoteNotFoundError(Exception):
-    """Raised when a note doesn't exist, or exists but isn't owned by the
-    requesting user. Also raised when creating a note on a sermon that isn't
-    in the user's library. Deliberately the same error for "doesn't exist"
-    and "not yours" - callers must not be able to tell the two apart."""
+    pass
 
 
 class NoteService:
-    """Business rules for user notes: ownership enforcement and the
-    library-membership precondition for note creation. Delegates data
-    access to NoteRepository/SermonRepository and owns the transaction
-    boundary (commit) around each operation.
-    """
-
     def __init__(self, db: DBSession, notes: NoteRepository, sermons: SermonRepository):
         self._db = db
         self._notes = notes

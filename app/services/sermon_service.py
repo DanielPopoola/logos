@@ -5,11 +5,12 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session as DBSession
 
 from app.ingestion.youtube import extract_video_id
-from app.models.processing_job import ProcessingJob
 from app.models.sermon import ProcessingStatus, Sermon
 from app.models.user import User
+from app.repositories.ingestion_repository import IngestionRepository
 from app.repositories.note_repository import NoteRepository
 from app.repositories.sermon_repository import SermonRepository
+from app.text import truncate
 from app.workers.tasks import process_sermon
 
 logger = logging.getLogger(__name__)
@@ -18,17 +19,11 @@ SUMMARY_EXCERPT_MAX_CHARS = 150
 
 
 class SermonNotFoundError(Exception):
-    """Raised when a sermon doesn't exist, or exists but isn't in the
-    requesting user's library. Deliberately the same error for both cases -
-    the API layer must not let a caller distinguish "doesn't exist" from
-    "exists but isn't yours"."""
+    pass
 
 
 class SermonNotRetryableError(Exception):
-    """Raised when retry is requested for a sermon that isn't in a failed
-    state. Retrying a pending/processing/completed sermon isn't meaningful -
-    there's nothing to recover, and re-enqueueing would race the existing
-    run or reprocess a sermon that already succeeded."""
+    pass
 
 
 @dataclass
@@ -95,20 +90,22 @@ class SermonService:
     the transaction boundary (commit) around each operation.
     """
 
-    def __init__(self, db: DBSession, sermons: SermonRepository, notes: NoteRepository):
+    def __init__(
+        self,
+        db: DBSession,
+        sermons: SermonRepository,
+        notes: NoteRepository,
+        ingestion: IngestionRepository,
+    ):
         self._db = db
         self._sermons = sermons
         self._notes = notes
+        self._ingestion = ingestion
 
     def _reset_processing_job(self, sermon: Sermon) -> None:
-        """A user-initiated retry is a fresh attempt window, distinct from
-        the automatic retry loop inside process_sermon - without this, a
-        video that already hit MAX_ATTEMPTS would silently no-op forever.
-        """
-        job = self._db.query(ProcessingJob).filter_by(sermon_id=sermon.id).first()
-        if job is not None:
-            job.attempt_count = 0
-            job.error_message = None
+        job = self._ingestion.get_or_create_job(sermon.id)
+        job.attempt_count = 0
+        job.error_message = None
 
     def _requeue_failed_sermon(self, sermon: Sermon) -> None:
         """Give a failed sermon a fresh attempt window and re-enqueue it.
@@ -139,7 +136,7 @@ class SermonService:
             sermon = Sermon(youtube_video_id=video_id, youtube_url=youtube_url)
             self._sermons.add(sermon)
             self._db.flush()
-            self._db.add(ProcessingJob(sermon_id=sermon.id))
+            self._ingestion.get_or_create_job(sermon.id)
             self._sermons.add_to_library(user.id, sermon.id)
             self._db.commit()
             process_sermon.delay(str(sermon.id))
@@ -185,11 +182,7 @@ class SermonService:
     def _truncate_summary(summary: str | None) -> str | None:
         if summary is None:
             return None
-        if len(summary) <= SUMMARY_EXCERPT_MAX_CHARS:
-            return summary
-        ellipsis = "..."
-        truncate_at = SUMMARY_EXCERPT_MAX_CHARS - len(ellipsis)
-        return summary[:truncate_at].rstrip() + ellipsis
+        return truncate(summary, SUMMARY_EXCERPT_MAX_CHARS)
 
     def get_library(self, user: User, page: int, page_size: int, theme: str | None) -> LibraryPage:
         """List the sermons in a user's library, most recently saved first.

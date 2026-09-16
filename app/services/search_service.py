@@ -9,6 +9,7 @@ from app.llm.client import embed_batch, generate_structured
 from app.models.user import User
 from app.repositories.search_repository import SearchRepository
 from app.repositories.sermon_repository import SermonRepository
+from app.text import truncate
 
 logger = logging.getLogger(__name__)
 
@@ -83,11 +84,7 @@ class SearchService:
 
     @staticmethod
     def _truncate_excerpt(text: str) -> str:
-        if len(text) <= MATCHED_EXCERPT_MAX_CHARS:
-            return text
-        ellipsis = "..."
-        truncate_at = MATCHED_EXCERPT_MAX_CHARS - len(ellipsis)
-        return text[:truncate_at].rstrip() + ellipsis
+        return truncate(text, MATCHED_EXCERPT_MAX_CHARS)
 
     def _find_results_by_title_or_theme(self, user: User, query: str, limit: int) -> list[SearchResult]:
         """Cheap tier: exact/substring match against title or theme name,

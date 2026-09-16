@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.database import get_db
 from app.errors import AppException
 from app.models.user import User
+from app.repositories.ingestion_repository import IngestionRepository
 from app.repositories.note_repository import NoteRepository
 from app.repositories.search_repository import SearchRepository
 from app.repositories.sermon_repository import SermonRepository
@@ -56,6 +57,10 @@ def get_sermon_repository(db: Annotated[DBSession, Depends(get_db)]) -> SermonRe
     return SermonRepository(db)
 
 
+def get_ingestion_repository(db: Annotated[DBSession, Depends(get_db)]) -> IngestionRepository:
+    return IngestionRepository(db)
+
+
 def get_note_service(
     db: Annotated[DBSession, Depends(get_db)],
     notes: Annotated[NoteRepository, Depends(get_note_repository)],
@@ -68,8 +73,9 @@ def get_sermon_service(
     db: Annotated[DBSession, Depends(get_db)],
     sermons: Annotated[SermonRepository, Depends(get_sermon_repository)],
     notes: Annotated[NoteRepository, Depends(get_note_repository)],
+    ingestion: Annotated[IngestionRepository, Depends(get_ingestion_repository)],
 ) -> SermonService:
-    return SermonService(db, sermons, notes)
+    return SermonService(db, sermons, notes, ingestion)
 
 
 def get_search_repository(db: Annotated[DBSession, Depends(get_db)]) -> SearchRepository:

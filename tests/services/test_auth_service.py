@@ -59,13 +59,9 @@ def test_create_session_persists_token_bound_to_user(db_session):
     service = _auth_service(db_session)
     user = service.get_or_create_user(GOOGLE_USERINFO)
 
-    session = service.create_session(user)
+    token = service.create_session(user)
 
-    stored = (
-        db_session.query(SessionModel)
-        .filter_by(token=AuthService._hash_session_token(session.token))
-        .one()
-    )
+    stored = db_session.query(SessionModel).filter_by(token=AuthService._hash_session_token(token)).one()
     assert stored.user_id == user.id
     assert stored.expires_at > datetime.now(UTC)
 
@@ -76,9 +72,9 @@ def test_create_session_persists_token_bound_to_user(db_session):
 def test_get_authenticated_user_returns_user_for_valid_session(db_session):
     service = _auth_service(db_session)
     user = service.get_or_create_user(GOOGLE_USERINFO)
-    session = service.create_session(user)
+    token = service.create_session(user)
 
-    resolved = service.get_authenticated_user(session.token)
+    resolved = service.get_authenticated_user(token)
 
     assert resolved.id == user.id
 
@@ -112,11 +108,11 @@ def test_get_authenticated_user_raises_expired_for_stale_session(db_session):
 def test_logout_deletes_session(db_session):
     service = _auth_service(db_session)
     user = service.get_or_create_user(GOOGLE_USERINFO)
-    session = service.create_session(user)
+    token = service.create_session(user)
 
-    service.logout(session.token)
+    service.logout(token)
 
-    assert db_session.query(SessionModel).filter_by(token=session.token).count() == 0
+    assert db_session.query(SessionModel).filter_by(token=token).count() == 0
 
 
 def test_logout_is_idempotent_for_unknown_token(db_session):

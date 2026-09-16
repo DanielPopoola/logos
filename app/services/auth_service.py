@@ -60,8 +60,7 @@ class AuthService:
         logger.info("Authenticated user created", extra={"user_id": str(user.id)})
         return user
 
-    def create_session(self, user: User) -> SessionModel:
-        """Issue a new opaque session token for the given user."""
+    def create_session(self, user: User) -> str:
         raw_token = secrets.token_urlsafe(32)
         session = SessionModel(
             token=self._hash_session_token(raw_token),
@@ -70,12 +69,8 @@ class AuthService:
         )
         self._sessions.add(session)
         self._db.commit()
-        expires_at = session.expires_at
-        user_id = session.user_id
-        self._db.expunge(session)
-        session = SessionModel(token=raw_token, user_id=user_id, expires_at=expires_at)
         logger.info("Authentication session created", extra={"user_id": str(user.id)})
-        return session
+        return raw_token
 
     @staticmethod
     def _hash_session_token(token: str) -> str:

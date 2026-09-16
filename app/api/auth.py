@@ -110,7 +110,7 @@ def google_callback(
         ) from e
 
     user = auth_service.get_or_create_user(userinfo)
-    session = auth_service.create_session(user)
+    token = auth_service.create_session(user)
     logger.info(
         "Authentication succeeded",
         extra={"auth_provider": "google", "auth_event": "login_success", "user_id": str(user.id)},
@@ -121,7 +121,7 @@ def google_callback(
     )
     redirect.set_cookie(
         key="session_token",
-        value=session.token,
+        value=token,
         httponly=True,
         max_age=SESSION_TTL_DAYS * 24 * 60 * 60,
         samesite="none" if settings.environment not in ("test", "development") else "lax",

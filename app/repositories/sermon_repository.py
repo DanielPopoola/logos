@@ -35,11 +35,12 @@ class SermonRepository:
     def add_to_library(self, user_id: uuid.UUID, sermon_id: uuid.UUID) -> None:
         self._db.add(UserSermon(user_id=user_id, sermon_id=sermon_id))
 
-    def remove_from_library(self, user_id: uuid.UUID, sermon_id: uuid.UUID) -> UserSermon | None:
+    def remove_from_library(self, user_id: uuid.UUID, sermon_id: uuid.UUID) -> bool:
         user_sermon = self._db.query(UserSermon).filter_by(user_id=user_id, sermon_id=sermon_id).first()
-        if user_sermon is not None:
-            self._db.delete(user_sermon)
-        return user_sermon
+        if user_sermon is None:
+            return False
+        self._db.delete(user_sermon)
+        return True
 
     def get_owned_with_saved_at(
         self, user_id: uuid.UUID, sermon_id: uuid.UUID

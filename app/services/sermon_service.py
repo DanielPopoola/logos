@@ -270,8 +270,8 @@ class SermonService:
         the sermon is shared infrastructure, not something any single user
         owns.
         """
-        deleted = self._sermons.remove_from_library(user.id, sermon_id)
-        if deleted is None:
+        removed = self._sermons.remove_from_library(user.id, sermon_id)
+        if not removed:
             raise SermonNotFoundError(f"Sermon {sermon_id} not found in this user's library")
         self._db.commit()
         logger.info(
